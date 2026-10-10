@@ -324,6 +324,29 @@
                 </div>
             </section>
 
+            <!-- [LLM] BARIS 4b: Saran AI (LLM) — tambahan, tidak mengubah DSS deterministik di atas -->
+            <section id="aiAdvisorSection" class="bg-[#1E1E1E] rounded-lg border border-[#2E2E2E] overflow-hidden" aria-label="Saran AI berbasis LLM">
+                <div class="px-5 py-3 border-b border-[#2E2E2E] flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <i class='bx bx-bot text-[#3B82F6] text-lg'></i>
+                        <h2 class="text-sm font-bold text-[#E0E0E0] tracking-wide">Saran AI (LLM)</h2>
+                        <span id="aiSourceTag" class="text-[10px] px-1.5 py-0.5 rounded border border-[#2E2E2E] text-[#9E9E9E] hidden"></span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-xs text-[#9E9E9E] font-mono">Dibuat: <span id="aiGeneratedAt" class="text-[#E0E0E0] font-tabular">—</span></span>
+                        <button id="btnAskAI" type="button" onclick="fetchAIAdvisory()" class="px-3 py-1.5 rounded-md bg-[#3B82F6] hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-60 disabled:cursor-not-allowed">
+                            <i class='bx bx-sparkles'></i><span>Minta Saran AI</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="aiResultBox" class="p-4 sm:p-5 text-xs sm:text-sm space-y-3">
+                    <p class="text-[#9E9E9E]">Saran muncul otomatis saat status berubah dan diperbarui berkala. Tekan tombol untuk meminta saran terbaru.</p>
+                </div>
+                <div class="px-5 py-2 border-t border-[#2E2E2E] text-[11px] text-[#9E9E9E]">
+                    Saran AI bersifat penasihat. Proteksi beban MCB tetap berasal dari aturan deterministik di atas.
+                </div>
+            </section>
+
             <!-- BARIS 5: ApexCharts Real-Time (Area) & Proyeksi TinyML 24 Jam (BAR CHART) -->
             <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 
@@ -753,6 +776,100 @@
     }
 }
         
+    </script>
+    <!-- [LLM] Logika Saran AI (terpisah dari script dasbor di atas) -->
+    <script>
+        (function () {
+            let lastRendered = null;
+
+            function esc(s) {
+                const d = document.createElement('div');
+                d.textContent = (s === null || s === undefined) ? '' : String(s);
+                return d.innerHTML;
+            }
+
+            function urgencyClass(u) {
+                if (u === 'BAHAYA') return 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+                if (u === 'WASPADA') return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+                return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+            }
+
+            function renderAdvice(resp) {
+                const box = document.getElementById('aiResultBox');
+                if (!box || !resp) return;
+                if (!resp.enabled && !resp.advice) {
+                    box.innerHTML = `<p class="text-amber-400">LLM belum aktif: atur environment variable <span class="font-mono">LLM_API_KEY</span> di server.</p>`;
+                    return;
+                }
+                const adv = resp.advice;
+                if (!adv) return;
+                if (lastRendered === adv.generated_at) return;
+                lastRendered = adv.generated_at;
+
+                const tag = document.getElementById('aiSourceTag');
+                if (tag) {
+                    tag.classList.remove('hidden');
+                    tag.textContent = adv.source === 'llm' ? (resp.model || 'LLM') : 'berbasis aturan';
+                }
+                const gen = document.getElementById('aiGeneratedAt');
+                if (gen) gen.textContent = (adv.generated_at || '').split(' ')[1] || '—';
+
+                const note = adv.source !== 'llm'
+                    ? `<p class="text-[11px] text-amber-400">LLM tidak tersedia (${esc(adv.error || 'tidak aktif')}); menampilkan saran berbasis aturan.</p>` : '';
+                box.innerHTML = `
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${urgencyClass(adv.urgensi)}">${esc(adv.urgensi)}</span>
+                        <strong class="text-[#E0E0E0]">${esc(adv.dss_title)}</strong>
+                    </div>
+                    <p class="text-[#D4D4D4] leading-relaxed">${esc(adv.ringkasan_kondisi)}</p>
+                    <div class="bg-[#181818] p-3 rounded-md border border-[#2E2E2E] space-y-1.5">
+                        <span class="font-semibold text-[#E0E0E0] block text-xs">Rekomendasi Tindakan</span>
+                        <ul class="list-disc list-inside space-y-1 text-[#D4D4D4]">
+                            ${(adv.tindakan_rekomendasi || []).map(r => `<li>${esc(r)}</li>`).join('')}
+                        </ul>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span class="text-emerald-400">${esc(adv.dampak_tindakan)}</span>
+                        <span class="text-amber-400 font-medium">${esc(adv.saran_token)}</span>
+                    </div>
+                    ${note}`;
+            }
+
+            async function pollAdvice() {
+                try {
+                    const res = await fetch('/api/ai-advisory');
+                    const json = await res.json();
+                    if (json.status === 'success') renderAdvice(json.data);
+                } catch (e) { /* abaikan; coba lagi pada siklus berikutnya */ }
+            }
+
+            window.fetchAIAdvisory = async function () {
+                const btn = document.getElementById('btnAskAI');
+                const box = document.getElementById('aiResultBox');
+                if (!btn || !box) return;
+                const original = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = `<i class='bx bx-loader-alt animate-spin'></i><span>Menganalisis...</span>`;
+                try {
+                    const res = await fetch('/api/ai-advisory', { method: 'POST' });
+                    const json = await res.json();
+                    if (json.status === 'success') {
+                        lastRendered = null;
+                        renderAdvice(json.data);
+                    } else if (json.status === 'waiting') {
+                        box.innerHTML = `<p class="text-amber-400">${esc(json.message)}</p>`;
+                    }
+                } catch (e) {
+                    box.innerHTML = `<p class="text-rose-400">Gagal terhubung ke modul AI.</p>`;
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = original;
+                }
+            };
+
+            pollAdvice();
+            setInterval(pollAdvice, 10000);
+        })();
     </script>
 </body>
 </html>

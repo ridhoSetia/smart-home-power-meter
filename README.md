@@ -28,6 +28,7 @@ Platform pemantauan telemetri energi listrik cerdas (*Smart Power Meter*) berbas
 - **Visualisasi TinyML 24 Jam**: Grafik batang horizon energi 4 kuadran ($Q1\text{ 0-6j}$, $Q2\text{ 6-12j}$, $Q3\text{ 12-18j}$, $Q4\text{ 18-24j}$) dan perkiraan biaya rupiah berdasarkan tarif per kWh.
 - **Decision Support System (DSS)**: Mesin aturan deterministik yang memberikan rekomendasi aksi proteksi beban lebih (*overload*) dan risiko pemadaman dini hari sebelum fajar (*dawn blackout protection*).
 - **Grafik Live Watt vs VA**: Grafik area real-time dengan batas anotasi kontrak PLN.
+- **Saran AI (LLM)**: Kartu rekomendasi preskriptif berbasis LLM (Gemini / API kompatibel OpenAI). Dipicu otomatis saat status DSS berubah dan tiap 10 menit, atau manual lewat tombol *Minta Saran AI*. Aturan deterministik tetap menjadi penentu status; LLM hanya memberi saran tindakan.
 
 ### 2. Riwayat & Analisis Telemetri (`/history`)
 - **Filter Fleksibel**: Tombol pintas preset (*Hari Ini*, *7 Hari*, *30 Hari*) dan formulir kustom rentang tanggal.
@@ -63,6 +64,7 @@ flowchart LR
 
 ```text
 website/
+├── recommender_engine.py # Penasihat LLM (Tier 3), tanpa dependensi tambahan
 ├── main.py              # Server FastAPI, klien MQTT, WebSocket manager, DSS engine, & database handler
 ├── requirements.txt     # Daftar pustaka dependensi Python
 ├── power_meter.db       # Database SQLite lokal (dibuat otomatis jika belum ada)
@@ -155,6 +157,11 @@ Antarmuka dibangun dengan panduan **Modern Dark Mode** untuk meminimalkan kelela
 }
 ```
 
+#### a2. Saran AI (LLM)
+- `GET /api/ai-advisory`: saran terakhir dari cache (tidak memanggil LLM).
+- `POST /api/ai-advisory`: permintaan manual; memanggil LLM bila cooldown 15 detik terpenuhi.
+- **Respons**: `{"status": "success", "data": {"enabled": true, "model": "...", "advice": {"ringkasan_kondisi", "urgensi", "tindakan_rekomendasi", "dampak_tindakan", "saran_token", "source", "generated_at", "dss_status", "dss_title"}}}`
+
 #### b. Ekspor CSV
 - **Endpoint**: `GET /api/history/export`
 - **Query Parameters**: `start_date`, `end_date` *(opsional)*.
@@ -174,6 +181,12 @@ Variabel lingkungan dapat didefinisikan langsung pada sistem atau file `.env`:
 | `KONTRAK_DAYA_VA`| Float | `1300.0` | Batas kapasitas MCB meteran (VA) |
 | `TARIF_PER_KWH` | Float | `1444.70` | Tarif listrik PLN golongan R1/1300 (Rp/kWh) |
 | `MAX_GAP_SECONDS`| Integer | `300` | Ambang jeda data untuk integrasi trapesium energi |
+| `LLM_API_KEY` | String | *(kosong)* | Kunci API LLM (alias `GEMINI_API_KEY`). Kosong = saran berbasis aturan saja |
+| `LLM_PROVIDER` | String | `gemini` | `gemini` atau `openai` (API kompatibel OpenAI: Groq, OpenRouter) |
+| `LLM_MODEL` | String | `gemini-3.1-flash-lite` | Nama model |
+| `LLM_BASE_URL` | String | *(kosong)* | Wajib bila `LLM_PROVIDER=openai`, mis. `https://api.groq.com/openai/v1` |
+| `LLM_PERIODIC_S` | Integer | `600` | Refresh berkala saat status tidak berubah |
+| `LLM_MIN_INTERVAL_S` | Integer | `30` | Jeda minimum antar panggilan otomatis |
 
 ---
 
@@ -220,3 +233,4 @@ Halaman riwayat dilengkapi serangkaian optimasi rendering untuk menjamin antarmu
 2. **Staggered Asynchronous Rendering**: Grafik dirender secara bertahap menggunakan *micro-task queue* agar thread JavaScript browser tidak terblokir.
 3. **Single DOM Reflow**: Injeksi 50 baris tabel telemetri menggunakan `DocumentFragment` untuk menghindari *DOM thrashing*.
 4. **Database Indexing**: Kolom `timestamp` pada SQLite dipasangi B-Tree index (`idx_telemetry_ts`) sehingga kueri rentang jutaan baris tetap responsif.
+

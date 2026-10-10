@@ -14,6 +14,9 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 import paho.mqtt.client as mqtt
 
+# [LLM] Penasihat LLM (Tier 3) — modul tambahan
+from recommender_engine import LLMAdvisor
+
 # Konfigurasi Template
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -187,6 +190,11 @@ latest_telemetry: Dict[str, Any] = {
 }
 
 
+# [LLM] Instans penasihat LLM. Memakai hasil evaluate_dss() sebagai konteks;
+# aturan deterministik tidak diubah.
+advisor = LLMAdvisor(KONTRAK_DAYA_VA, TARIF_PER_KWH)
+
+
 # --------------------------------------------------------------------------
 # Komunikasi MQTT (HiveMQ Cloud / Broker Lokal)
 # --------------------------------------------------------------------------
@@ -247,6 +255,11 @@ def on_mqtt_message(client, userdata, msg):
 
         # Paket siaran = telemetri + hasil DSS
         packet = build_packet(record)
+
+        # [LLM] Pemicu otomatis (transisi status / siklus berkala). Non-blocking:
+        # hanya menjadwalkan coroutine di event loop utama.
+        if main_loop is not None and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(advisor.on_telemetry(record, packet["dss"]), main_loop)
 
         # Simpan ke database SQLite
         conn = get_db_connection()
@@ -452,3 +465,21 @@ async def export_history_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=power_meter_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
     )
+
+
+# --------------------------------------------------------------------------
+# [LLM] Endpoint Saran AI (tambahan)
+# --------------------------------------------------------------------------
+@app.get("/api/ai-advisory")
+async def get_ai_advisory():
+    """Saran AI terakhir dari cache (tidak memanggil LLM)."""
+    return {"status": "success", "data": advisor.snapshot()}
+
+
+@app.post("/api/ai-advisory")
+async def request_ai_advisory():
+    """Permintaan manual (tombol 'Minta Saran AI'). Dibatasi cooldown agar kuota API hemat."""
+    if not data_received:
+        return {"status": "waiting", "message": "Belum ada telemetri dari perangkat; saran AI belum bisa dibuat."}
+    dss = evaluate_dss(latest_telemetry)
+    return {"status": "success", "data": await advisor.advise(latest_telemetry, dss)}
