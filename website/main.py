@@ -9,6 +9,23 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
+# Muat file .env otomatis jika ada (tanpa memerlukan dependensi eksternal)
+_env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_env_path):
+    try:
+        with open(_env_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#"):
+                    continue
+                if "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    _k, _v = _k.strip(), _v.strip().strip("'\"")
+                    if _k and _k not in os.environ:
+                        os.environ[_k] = _v
+    except Exception as _e:
+        print(f"[!] Gagal membaca .env: {_e}")
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -23,13 +40,13 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "power_meter.db")
 
-# Daya kontrak rumah: STATIS 1300 VA (tidak bisa diubah dari dashboard)
-KONTRAK_DAYA_VA: float = 1300.0
-TARIF_PER_KWH: float = 1444.70
+# Daya kontrak rumah & tarif (dapat disesuaikan via .env)
+KONTRAK_DAYA_VA: float = float(os.getenv("KONTRAK_DAYA_VA", 1300.0))
+TARIF_PER_KWH: float = float(os.getenv("TARIF_PER_KWH", 1444.70))
 
 # Jeda antar sampel terbesar (detik) yang masih dianggap pengukuran kontinu
 # saat menghitung energi. Jeda lebih besar (alat mati) tidak dihitung.
-MAX_GAP_SECONDS = 300
+MAX_GAP_SECONDS = int(os.getenv("MAX_GAP_SECONDS", 300))
 
 TELEMETRY_FIELDS = [
     "voltage", "current", "power", "apparent_power", "pf",

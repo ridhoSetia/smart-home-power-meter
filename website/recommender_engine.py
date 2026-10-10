@@ -27,6 +27,23 @@ import urllib.request
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+# Muat file .env otomatis jika ada
+_env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_env_path):
+    try:
+        with open(_env_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#"):
+                    continue
+                if "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    _k, _v = _k.strip(), _v.strip().strip("'\"")
+                    if _k and _k not in os.environ:
+                        os.environ[_k] = _v
+    except Exception:
+        pass
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
 LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-3.1-flash-lite")
@@ -110,7 +127,7 @@ class LLMAdvisor:
             except Exception as e:  # jaringan, kuota, JSON rusak, dll.
                 print(f"[LLM] Gagal: {type(e).__name__}: {e}")
                 self._blocked_until = now + ERROR_BACKOFF_S
-                advice = self._fallback(dss, reason=f"{type(e).__name__}")
+                advice = self._fallback(dss, reason=str(e))
             advice = self._apply_floor(advice, dss)
             advice["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             advice["dss_status"] = dss.get("status")
@@ -121,27 +138,31 @@ class LLMAdvisor:
         s = _f(t, "apparent_power")
         qs = [_f(t, k) for k in ("q1", "q2", "q3", "q4")]
         now = datetime.now()
-        return f"""Anda adalah penasihat energi untuk rumah tangga di Indonesia (kontrak {self.contract_va:.0f} VA, prabayar).
-Jawab dalam Bahasa Indonesia, ringkas, dan praktis. Gunakan HANYA data di bawah.
-Taksiran daya peralatan harus ditandai "perkiraan"; jangan mengarang angka pengukuran.
-Aturan deterministik sudah menentukan status; jangan menyangkalnya.
+        pct = (s / self.contract_va * 100) if self.contract_va > 0 else 0.0
+        return f"""Anda adalah penasihat energi rumah tangga di Indonesia (kontrak {self.contract_va:.0f} VA, listrik prabayar).
+Gunakan Bahasa Indonesia sehari-hari yang santun, sederhana, dan mudah dipahami orang rumah.
+PENTING: Jangan gunakan istilah asing seperti runway atau load shifting. Gunakan istilah bahasa Indonesia seperti perkiraan sisa waktu pemakaian listrik, daya tahan saldo token, atau memindahkan jam pemakaian alat listrik.
+Taksiran daya alat listrik harus ditandai perkiraan, jangan mengarang data pengukuran.
 
-WAKTU LOKAL: {now:%H:%M}
-TARIF: Rp {self.tarif:.2f}/kWh
-TELEMETRI: tegangan {_f(t,'voltage'):.1f} V, arus {_f(t,'current'):.3f} A, daya aktif {_f(t,'power'):.1f} W,
-daya semu {s:.1f} VA ({s / self.contract_va * 100:.1f}% dari {self.contract_va:.0f} VA), PF {_f(t,'pf'):.1f}%,
-saldo {_f(t,'saldo_kwh'):.2f} kWh, runway {_f(t,'runway_hours'):.1f} jam
-PROYEKSI TINYML (kWh): Q1 0-6j {qs[0]:.3f}; Q2 6-12j {qs[1]:.3f}; Q3 12-18j {qs[2]:.3f}; Q4 18-24j {qs[3]:.3f}; total {sum(qs):.2f}
-STATUS ATURAN DSS: {dss.get('status')} - {dss.get('title')}
-PESAN DSS: {dss.get('message')}
-TARGET REDUKSI: {dss.get('excess_watt', 0)} W/VA
+DATA KELISTRIKAN RUMAH:
+- Waktu: {now:%H:%M} WIB
+- Tegangan: {_f(t,'voltage'):.1f} V, Arus: {_f(t,'current'):.3f} A
+- Daya Aktif: {_f(t,'power'):.1f} W, Daya Semu: {s:.1f} VA ({pct:.1f}% dari kapasitas kontrak {self.contract_va:.0f} VA)
+- Saldo Token: {_f(t,'saldo_kwh'):.2f} kWh
+- Perkiraan Sisa Waktu Pemakaian Listrik: {_f(t,'runway_hours'):.1f} jam
+- Estimasi Pemakaian 24 Jam (TinyML): Kuadran 1 (00-06): {qs[0]:.2f} kWh, Kuadran 2 (06-12): {qs[1]:.2f} kWh, Kuadran 3 (12-18): {qs[2]:.2f} kWh, Kuadran 4 (18-24): {qs[3]:.2f} kWh (Total: {sum(qs):.2f} kWh)
+- Tarif Listrik PLN: Rp {self.tarif:.2f}/kWh
+- Status Sistem: {dss.get('status')} ({dss.get('title')}) - {dss.get('message')}
+- Target Pengurangan Beban: {dss.get('excess_watt', 0)} W
 
-Balas HANYA satu objek JSON valid (tanpa markdown) dengan kunci persis:
-{{"ringkasan_kondisi": "1-2 kalimat analisis beban dan tren proyeksi",
-  "urgensi": "AMAN atau WASPADA atau BAHAYA",
-  "tindakan_rekomendasi": ["2 sampai 4 aksi konkret: nama alat + taksiran daya, load shifting ke jam proyeksi rendah, efisiensi token"],
-  "dampak_tindakan": "estimasi kWh/rupiah yang dihemat atau jam runway yang bertambah",
-  "saran_token": "nominal pembelian token, atau 'Saldo mencukupi'"}}"""
+Keluarkan output HANYA dalam format JSON valid dengan skema berikut:
+{{
+  "ringkasan_kondisi": "penjelasan kondisi pemakaian listrik rumah secara singkat dan mudah dimengerti orang rumah",
+  "urgensi": "AMAN",
+  "tindakan_rekomendasi": ["langkah praktis alat 1", "langkah praktis alat 2"],
+  "dampak_tindakan": "manfaat penghematan rupiah atau perkiraan tambahan waktu listrik bertahan",
+  "saran_token": "saran isi token atau Saldo token masih mencukupi"
+}}"""
 
     def _call_llm(self, prompt: str) -> str:
         """Panggilan HTTP sinkron (dijalankan di thread agar event loop tidak terblokir)."""
@@ -158,6 +179,7 @@ Balas HANYA satu objek JSON valid (tanpa markdown) dengan kunci persis:
                                          "responseMimeType": "application/json"}}
             headers = {"x-goog-api-key": LLM_API_KEY}
         headers["Content-Type"] = "application/json"
+        headers["User-Agent"] = "SmartPowerMeter/1.0 (Linux; x86_64)"
         req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
                                      headers=headers, method="POST")
         try:

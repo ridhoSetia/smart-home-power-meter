@@ -318,7 +318,10 @@
                 <!-- Banner DSS -->
                 <div id="dssBanner" class="p-4 sm:p-5 transition-colors flex items-start gap-4 bg-[#1E1E1E] text-[#E0E0E0]">
                     <div class="flex-1 min-w-0">
-                        <h3 id="dssTitle" class="text-sm sm:text-base font-bold text-[#E0E0E0] tracking-wide">Sistem Dalam Batas Aman</h3>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span id="dssBadge" class="px-2.5 py-0.5 rounded-full border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-[11px] font-semibold uppercase">OPTIMAL</span>
+                            <h3 id="dssTitle" class="text-sm sm:text-base font-bold text-[#E0E0E0] tracking-wide">Sistem Dalam Batas Aman</h3>
+                        </div>
                         <p id="dssMessage" class="text-xs sm:text-sm text-[#D4D4D4] mt-1 leading-relaxed">Penggunaan stabil, saldo mencukupi kebutuhan operasional rumah.</p>
                     </div>
                 </div>
@@ -680,13 +683,47 @@
             document.getElementById('textLoadPct').innerText = `${loadPct}% dari batas ${contractLimit} VA`;
         }
 
-        // DSS Banner
-        if (data.dss && document.getElementById('dssBadge')) {
-            document.getElementById('dssBadge').innerText = data.dss.status;
-            document.getElementById('dssTitle').innerText = data.dss.title;
-            document.getElementById('dssMessage').innerText = data.dss.message;
-            if (document.getElementById('lastUpdated')) {
-                document.getElementById('lastUpdated').innerText = (data.timestamp || '').split(' ')[1] || new Date().toLocaleTimeString();
+        // Waktu Pembaruan Terakhir
+        if (document.getElementById('lastUpdated')) {
+            document.getElementById('lastUpdated').innerText = (data.timestamp || '').split(' ')[1] || new Date().toLocaleTimeString();
+        }
+
+        // DSS Banner Rekomendasi
+        if (data.dss) {
+            const dss = data.dss;
+            const badge = document.getElementById('dssBadge');
+            const title = document.getElementById('dssTitle');
+            const message = document.getElementById('dssMessage');
+            const banner = document.getElementById('dssBanner');
+            const iconWrapper = document.getElementById('dssIconWrapper');
+            const icon = document.getElementById('dssIcon');
+
+            if (badge) badge.innerText = dss.status;
+            if (title) title.innerText = dss.title;
+            if (message) message.innerText = dss.message;
+
+            if (banner) {
+                if (dss.status === 'DANGER') {
+                    banner.className = "p-4 sm:p-5 transition-colors flex items-start gap-4 bg-rose-950/20 border-t border-rose-500/30 text-[#E0E0E0]";
+                    if (badge) badge.className = "px-2.5 py-0.5 rounded-full border border-rose-500/60 text-rose-400 bg-rose-500/10 text-[11px] font-semibold uppercase";
+                    if (iconWrapper) iconWrapper.className = "w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0 mt-0.5";
+                    if (icon) icon.className = "bx bxs-error-alt text-xl";
+                } else if (dss.status === 'WARNING') {
+                    banner.className = "p-4 sm:p-5 transition-colors flex items-start gap-4 bg-amber-950/20 border-t border-amber-500/30 text-[#E0E0E0]";
+                    if (badge) badge.className = "px-2.5 py-0.5 rounded-full border border-amber-500/60 text-amber-400 bg-amber-500/10 text-[11px] font-semibold uppercase";
+                    if (iconWrapper) iconWrapper.className = "w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5";
+                    if (icon) icon.className = "bx bxs-bell-ring text-xl";
+                } else if (dss.status === 'INFO') {
+                    banner.className = "p-4 sm:p-5 transition-colors flex items-start gap-4 bg-sky-950/20 border-t border-sky-500/30 text-[#E0E0E0]";
+                    if (badge) badge.className = "px-2.5 py-0.5 rounded-full border border-sky-500/60 text-sky-400 bg-sky-500/10 text-[11px] font-semibold uppercase";
+                    if (iconWrapper) iconWrapper.className = "w-10 h-10 rounded-full bg-sky-500/20 text-sky-400 flex items-center justify-center flex-shrink-0 mt-0.5";
+                    if (icon) icon.className = "bx bxs-info-circle text-xl";
+                } else {
+                    banner.className = "p-4 sm:p-5 transition-colors flex items-start gap-4 bg-[#1E1E1E] text-[#E0E0E0]";
+                    if (badge) badge.className = "px-2.5 py-0.5 rounded-full border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-[11px] font-semibold uppercase";
+                    if (iconWrapper) iconWrapper.className = "w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0 mt-0.5";
+                    if (icon) icon.className = "bx bxs-shield-check text-xl";
+                }
             }
         }
     } catch (errCards) {
