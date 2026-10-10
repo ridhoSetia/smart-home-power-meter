@@ -1,6 +1,7 @@
 *.txt
 *.pdf
 *.docx
+*.pdf
 
 # Python / FastAPI
 __pycache__/
