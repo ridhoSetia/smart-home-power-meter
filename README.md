@@ -1,4 +1,4 @@
-# Smart Home Power Meter & TinyML Predictor (ELEVATE 2026)
+# Smart Home Power Meter & TinyML Predictor
 
 > **Sistem Pemantauan, Prediksi, dan Rekomendasi Konsumsi Listrik Rumah Tangga 1.300 VA Berbasis AIoT dan LLM**
 
