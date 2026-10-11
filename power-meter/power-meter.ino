@@ -1,8 +1,8 @@
 /*
  * ==================================================================================
- * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * SISTEM PENYIMPANAN: 100% MURNI MICROSD CARD (TANPA NVS FLASH)
- * FITUR: PERSISTENT FULLSCREEN INPUT, NON-BLOCKING MILLIS, TRUE-RMS VA
+ * PROYEK: SMART POWER METER & TINYML PREDICTOR
+ * SISTEM PENYIMPANAN: 100% MURNI MICROSD CARD
+ * FITUR: PERSISTENT OLED INPUT, NON-BLOCKING MILLIS, TRUE-RMS, MQTT, TINYML AR-MLP
  * ==================================================================================
  */
 
@@ -30,7 +30,7 @@ const char* FILE_SALDO = "/saldo.txt";
 const char* FILE_LOG = "/energy_log.csv";
 const char* FILE_BUFFER = "/buffer_history.dat";
 
-// ================= KEYPAD MATRIX 4x4 =================
+// ================= KEYPAD MATRIX 4x4 (GPIO 13, 12, 14, 26, 27, 25, 33, 32) =================
 const byte ROWS = 4;
 const byte COLS = 4;
 char keys[ROWS][COLS] = {
@@ -79,7 +79,7 @@ float i_rms_stable = 0.0f, p_active_stable = 0.0f, p_apparent_stable = 0.0f;
 int raw_v_arr[MAX_SAMPLES];
 int raw_i_arr[MAX_SAMPLES];
 
-// ================= SALDO & RUNWAY =================
+// ================= SALDO & BUFFER PREDIKSI =================
 float saldo_token_kwh = 20.0f;
 float last_saved_saldo = 20.0f;
 float current_interval_kwh = 0.0f;
@@ -91,7 +91,7 @@ int buffer_idx = 0;
 float predicted_q[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 bool is_ml_warmed_up = false;
 
-// ================= MODE INPUT & POPUP =================
+// ================= MODE INPUT & NOTIFIKASI =================
 String input_kwh_str = "";
 String key_sequence = "";
 bool is_input_mode = false;
@@ -101,7 +101,7 @@ unsigned long popup_end_time = 0;
 String popup_line1 = "";
 String popup_line2 = "";
 
-// Timer Non-Blocking (millis)
+// Timer Non-Blocking
 unsigned long prevSecTime = 0;
 unsigned long prevMqttSendTime = 0;
 unsigned long prevSdLogTime = 0;
@@ -109,7 +109,7 @@ unsigned long prevInterval15m = 0;
 unsigned long prevWifiRetry = 0;
 unsigned long prevMqttRetry = 0;
 unsigned long prevOledRefresh = 0;
-const unsigned long INTERVAL_15M = 900000;
+const unsigned long INTERVAL_15M = 900000;  // 15 menit (ms)
 
 // ================= PROTOTIPE FUNGSI =================
 void handleKeypad();
@@ -123,6 +123,7 @@ void handleMQTT();
 void publishTelemetry();
 void warmupTinyMLWithCurrentLoad();
 void initSDCard();
+bool recoverSDCard();
 void saveSaldoToSD(float saldo);
 void logTelemetryToSD();
 void saveBufferToSD();
@@ -146,7 +147,7 @@ void setup() {
   display.println(F("BOOTING SYSTEM..."));
   display.display();
 
-  // Inisialisasi MicroSD Murni
+  // Inisialisasi MicroSD Card
   initSDCard();
 
   WiFi.mode(WIFI_STA);
@@ -158,18 +159,23 @@ void setup() {
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setBufferSize(512);
 
+  // Inisialisasi pengukuran beban awal
+  calculateACMetricsPresisi();
+  i_rms_stable = i_rms;
+  p_active_stable = p_active;
+  p_apparent_stable = p_apparent;
+
   if (loadBufferFromSD()) {
     is_ml_warmed_up = true;
     float features[8];
     build_features(features);
     tinyml_predict(features, predicted_q);
   } else {
-    calculateACMetricsPresisi();
     warmupTinyMLWithCurrentLoad();
   }
 }
 
-// ================= LOOP UTAMA (NON-BLOCKING) =================
+// ================= LOOP UTAMA =================
 void loop() {
   unsigned long currentMillis = millis();
 
@@ -200,20 +206,20 @@ void loop() {
 
     if (!is_ml_warmed_up && p_active_stable > 0.1f) {
       warmupTinyMLWithCurrentLoad();
-      is_ml_warmed_up = true;
     }
 
-    // Pemotongan Saldo Berdasarkan Daya Aktif (Watt)
+    // Pemotongan saldo berdasarkan daya aktif riil (Watt)
     float delta_kwh = p_active_stable / 3600000.0f;
     saldo_token_kwh -= delta_kwh;
     if (saldo_token_kwh < 0.0f) saldo_token_kwh = 0.0f;
     current_interval_kwh += delta_kwh;
 
-    // Simpan berkala ke SD jika berkurang >= 0.01 kWh
+    // Simpan saldo ke MicroSD jika berkurang >= 0.01 kWh
     if (abs(last_saved_saldo - saldo_token_kwh) >= 0.01f) {
       saveSaldoToSD(saldo_token_kwh);
     }
 
+    // Estimasi sisa jam kuota listrik
     float avg_kw = (predicted_q[0] > 0.01f) ? (predicted_q[0] / 6.0f) : (p_active_stable / 1000.0f);
     if (avg_kw > 0.005f) {
       token_runway_hours = saldo_token_kwh / avg_kw;
@@ -266,7 +272,7 @@ void loop() {
 void initSDCard() {
   SPI.begin(18, 19, 23, SD_CS_PIN);
   if (!SD.begin(SD_CS_PIN, SPI, 4000000)) {
-    Serial.println(F("[SD] Gagal mount! Pastikan VCC ke 5V dan format FAT32."));
+    Serial.println(F("[SD] Gagal mount! Pastikan koneksi pin CS=5, SCK=18, MOSI=23, MISO=19"));
     sdCardAvailable = false;
     return;
   }
@@ -277,7 +283,7 @@ void initSDCard() {
   }
 
   sdCardAvailable = true;
-  Serial.println(F("[SD] MicroSD Card terpasang dan siap digunakan!"));
+  Serial.println(F("[SD] MicroSD Card terdeteksi dan siap beroperasi!"));
 
   if (SD.exists(FILE_SALDO)) {
     File f = SD.open(FILE_SALDO, FILE_READ);
@@ -305,12 +311,11 @@ void initSDCard() {
   }
 }
 
-// ================= AUTO-RECOVERY MICROSD =================
 bool recoverSDCard() {
-  Serial.println(F("[SD] Terjadi gangguan, mencoba inisialisasi ulang MicroSD..."));
+  Serial.println(F("[SD] Mencoba inisialisasi pemulihan MicroSD..."));
   SD.end();
   delay(100);
-  
+
   if (SD.begin(SD_CS_PIN, SPI, 4000000)) {
     if (SD.cardType() != CARD_NONE) {
       sdCardAvailable = true;
@@ -318,55 +323,46 @@ bool recoverSDCard() {
       return true;
     }
   }
-  
+
   sdCardAvailable = false;
   Serial.println(F("[SD] Gagal memulihkan MicroSD!"));
   return false;
 }
 
-// ================= PERBAIKAN PENYIMPANAN SALDO =================
 void saveSaldoToSD(float saldo) {
   saldo_token_kwh = saldo;
   last_saved_saldo = saldo;
 
-  // 1. Cek kesiapan SD Card
   if (!sdCardAvailable) {
     if (!recoverSDCard()) return;
   }
 
-  // 2. Hapus file lama terlebih dahulu agar pointer cluster FAT32 bersih
   if (SD.exists(FILE_SALDO)) {
     SD.remove(FILE_SALDO);
   }
 
-  // 3. Buka dengan mode FILE_WRITE murni
   File f = SD.open(FILE_SALDO, FILE_WRITE);
-
-  // 4. Jika masih gagal terbuka, lakukan recovery 1 kali lalu coba buka ulang
   if (!f) {
     if (recoverSDCard()) {
       f = SD.open(FILE_SALDO, FILE_WRITE);
     }
   }
 
-  // 5. Tulis data
   if (f) {
     f.printf("%.4f\n", saldo);
     f.flush();
     f.close();
-    Serial.printf("[SD] Saldo berhasil disimpan: %.4f kWh\n", saldo);
+    Serial.printf("[SD] Saldo tersimpan: %.4f kWh\n", saldo);
   } else {
-    Serial.println(F("[SD] Error: Gagal membuka /saldo.txt untuk penulisan!"));
+    Serial.println(F("[SD] Error penulisan saldo.txt!"));
   }
 }
 
 void wipeAllSDCardFiles() {
   if (!sdCardAvailable) {
-    Serial.println(F("[SD] Kartu SD tidak aktif, format dibatalkan!"));
+    Serial.println(F("[SD] Kartu SD offline, pembersihan dibatalkan!"));
     return;
   }
-
-  Serial.println(F("[SD] Menghapus seluruh berkas di MicroSD..."));
 
   if (SD.exists(FILE_SALDO)) SD.remove(FILE_SALDO);
   if (SD.exists(FILE_LOG)) SD.remove(FILE_LOG);
@@ -378,33 +374,27 @@ void wipeAllSDCardFiles() {
     energy_buffer_15m[i] = 0.0f;
   }
 
-  File f = SD.open(FILE_SALDO, "w");
-  if (!f) f = SD.open(FILE_SALDO, FILE_WRITE);
+  File f = SD.open(FILE_SALDO, FILE_WRITE);
   if (f) {
-    f.seek(0);
     f.println("0.0000");
     f.flush();
     f.close();
   }
 
-  File logFile = SD.open(FILE_LOG, "w");
-  if (!logFile) logFile = SD.open(FILE_LOG, FILE_WRITE);
+  File logFile = SD.open(FILE_LOG, FILE_WRITE);
   if (logFile) {
-    logFile.seek(0);
     logFile.println("uptime_s,voltage,current,p_active,p_apparent,pf,saldo_kwh,runway_h,q1,q2,q3,q4");
     logFile.flush();
     logFile.close();
   }
 
-  Serial.println(F("[SD] Seluruh isi MicroSD berhasil dibersihkan total!"));
+  Serial.println(F("[SD] MicroSD berhasil dibersihkan total!"));
 }
 
 void saveBufferToSD() {
   if (!sdCardAvailable) return;
-  File f = SD.open(FILE_BUFFER, "w");
-  if (!f) f = SD.open(FILE_BUFFER, FILE_WRITE);
+  File f = SD.open(FILE_BUFFER, FILE_WRITE);
   if (f) {
-    f.seek(0);
     f.write((uint8_t*)&buffer_idx, sizeof(buffer_idx));
     f.write((uint8_t*)energy_buffer_15m, sizeof(energy_buffer_15m));
     f.flush();
@@ -421,7 +411,7 @@ bool loadBufferFromSD() {
       f.read((uint8_t*)&buffer_idx, sizeof(buffer_idx));
       f.read((uint8_t*)energy_buffer_15m, sizeof(energy_buffer_15m));
       f.close();
-      Serial.println(F("[SD] Riwayat 24 jam berhasil dimuat dari SD!"));
+      Serial.println(F("[SD] Buffer riwayat 24 jam berhasil dimuat!"));
       return true;
     }
     f.close();
@@ -452,7 +442,7 @@ void logTelemetryToSD() {
   }
 }
 
-// ================= LOGIKA KEYPAD (EVENT-DRIVEN) =================
+// ================= LOGIKA KEYPAD MATRIKS =================
 void handleKeypad() {
   char key = keypad.getKey();
   if (!key) return;
@@ -655,6 +645,7 @@ void updateOLED() {
   display.display();
 }
 
+// ================= METROLOGI TRUE-RMS PRESISI =================
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
@@ -701,8 +692,8 @@ void calculateACMetricsPresisi() {
 
   double sum_p_inst = 0.0;
   int valid_p = 0;
-  int start_idx = max(1, -PHASE_SAMPLE_SHIFT);
-  int end_idx = min(n_samples - 1, n_samples - PHASE_SAMPLE_SHIFT - 1);
+  int start_idx = (1 > -PHASE_SAMPLE_SHIFT) ? 1 : -PHASE_SAMPLE_SHIFT;
+  int end_idx = (n_samples - 1 < n_samples - PHASE_SAMPLE_SHIFT - 1) ? (n_samples - 1) : (n_samples - PHASE_SAMPLE_SHIFT - 1);
 
   for (int n = start_idx; n < end_idx; n++) {
     float v0 = (float)raw_v_arr[n + PHASE_SAMPLE_SHIFT] - v_offset;
@@ -734,26 +725,23 @@ void calculateACMetricsPresisi() {
 
 // ================= ADAPTASI AWAL TINYML =================
 void warmupTinyMLWithCurrentLoad() {
-  // Ambil daya saat ini; jika nol (tanpa beban), gunakan baseline beban rumah tangga minimal (misal 60 Watt / 0.06 kW)
   float active_kw = (p_active_stable > 0.05f) ? (p_active_stable / 1000.0f) : 0.060f;
-  float initial_energy_15m = active_kw * 0.25f; // Konsumsi per 15 menit
+  float initial_energy_15m = active_kw * 0.25f;
 
-  // Isi seluruh 96 buffer agar fitur lag tidak nol
   for (int i = 0; i < BUFFER_SIZE; i++) {
     energy_buffer_15m[i] = initial_energy_15m;
   }
 
-  // Eksekusi prediksi awal agar Q1 - Q4 langsung memiliki nilai
   float features[8];
   build_features(features);
   tinyml_predict(features, predicted_q);
-  
+
   is_ml_warmed_up = true;
   Serial.printf("[TinyML] Warm-up selesai: Q1=%.3f, Q2=%.3f, Q3=%.3f, Q4=%.3f\n",
                 predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
 }
 
-// ================= PERBAIKAN FITUR TINYML SINKRON DENGAN MODEL BARU =================
+// ================= EKSTRAKSI FITUR TINYML SINKRON MODEL =================
 void build_features(float* features) {
   // Fitur 0 - 3: 4 lag interval 15 menit (1 jam terakhir)
   features[0] = energy_buffer_15m[buffer_idx];
@@ -769,20 +757,20 @@ void build_features(float* features) {
   }
   features[4] = sum_6h / 24.0f;
 
-  // Fitur 5: Konsumsi pada jam yang sama kemarin (lag 24 jam = 96 slot lalu)
+  // Fitur 5: Konsumsi pada jam yang sama kemarin (lag 24 jam / 96 slot lalu)
   features[5] = energy_buffer_15m[(buffer_idx + 1) % BUFFER_SIZE];
 
   // Fitur 6 - 7: Siklus waktu sirkadian (jam desimal 0.00 - 23.75)
   struct tm timeinfo;
-  float hour_dec = 12.0f;  // Default siang hari jika jam NTP belum sinkron
+  float hour_dec = 12.0f;
   if (getLocalTime(&timeinfo)) {
     hour_dec = timeinfo.tm_hour + (timeinfo.tm_min / 60.0f);
   }
-  features[6] = sin(2.0f * PI * hour_dec / 24.0f);
-  features[7] = cos(2.0f * PI * hour_dec / 24.0f);
+  features[6] = sinf(2.0f * PI * hour_dec / 24.0f);
+  features[7] = cosf(2.0f * PI * hour_dec / 24.0f);
 }
 
-// ================= JARINGAN NON-BLOCKING =================
+// ================= JARINGAN WIFI & MQTT =================
 void handleWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
   if (millis() - prevWifiRetry >= 5000) {
@@ -801,7 +789,6 @@ void handleMQTT() {
   if (millis() - prevMqttRetry >= 5000) {
     prevMqttRetry = millis();
     if (mqttClient.connect(mqttClientId.c_str())) {
-      // Jika baru terhubung dan Q masih nol, hitung ulang prediksi sekali
       if (predicted_q[0] == 0.0f && predicted_q[3] == 0.0f) {
         float features[8];
         build_features(features);
