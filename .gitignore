@@ -4,6 +4,7 @@
 *.pdf
 *.docx#
 *.jpeg
+surat-orisinalitas.jpg
 
 # Python / FastAPI
 __pycache__/
