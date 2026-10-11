@@ -1,236 +1,244 @@
-# ⚡ Smart Power Meter IoT — Web Platform
+# Smart Home Power Meter & TinyML Predictor (ELEVATE 2026)
 
-Platform pemantauan telemetri energi listrik cerdas (*Smart Power Meter*) berbasis **FastAPI**, **WebSocket real-time**, dan **MQTT**. Sistem ini dirancang untuk menampilkan parameter metrologi True-RMS dari mikrokontroler ESP32, inferensi prediksi energi TinyML 24 jam ke depan, serta Decision Support System (DSS) untuk pencegahan trip MCB dan optimalisasi kuota listrik prabayar.
+> **Sistem Pemantauan, Prediksi, dan Rekomendasi Konsumsi Listrik Rumah Tangga 1.300 VA Berbasis AIoT dan LLM**
 
----
-
-## 📑 Daftar Isi
-- [Fitur Utama](#-fitur-utama)
-- [Arsitektur Sistem](#-arsitektur-sistem)
-- [Struktur Direktori](#-struktur-direktori)
-- [Spesifikasi Tampilan & Antarmuka](#-spesifikasi-tampilan--antarmuka)
-- [Dokumentasi API & WebSocket](#-dokumentasi-api--websocket)
-- [Konfigurasi Lingkungan (Environment Variables)](#-konfigurasi-lingkungan-environment-variables)
-- [Panduan Instalasi & Menjalankan](#-panduan-instalasi--menjalankan)
-- [Optimasi Performa](#-optimasi-performa)
+Proyek ini menghadirkan purwarupa alat ukur daya pintar terintegrasi (*smart energy meter*) yang dirancang khusus bagi pelanggan listrik prabayar 1.300 VA di Indonesia. Sistem menggabungkan metrologi kelistrikan berpresisi tinggi (*True-RMS*), inferensi cerdas langsung di perangkat (*On-Device TinyML*), peladen *backend* asinkron berbasis MQTT & WebSocket, serta panduan efisiensi energi bahasa alami menggunakan *Large Language Model* (LLM).
 
 ---
 
-## 🚀 Fitur Utama
-
-### 1. Dasbor Real-Time (`/`)
-- **Metrologi True-RMS**: Tegangan ($V$), Arus ($A$), Daya Aktif ($W$), Daya Semu ($VA$), dan Power Factor ($PF$).
-- **Manajemen Kuota Prabayar**: Sisa kuota saldo ($kWh$) dan estimasi sisa waktu pemakaian (*runway hours*).
-- **Indikator Beban Kontrak MCB**: Bilah visual kapasitas beban saat ini terhadap kontrak daya (misal $1300\text{ VA}$), dengan sistem pewarnaan dinamis:
-  - Biru Modern (`#3B82F6`): Beban aman ($< 70\%$).
-  - Amber (`#F59E0B`): Beban siaga ($70\% - 84\%$).
-  - Rose (`#EF4444`): Beban kritis ($\ge 85\%$).
-- **Visualisasi TinyML 24 Jam**: Grafik batang horizon energi 4 kuadran ($Q1\text{ 0-6j}$, $Q2\text{ 6-12j}$, $Q3\text{ 12-18j}$, $Q4\text{ 18-24j}$) dan perkiraan biaya rupiah berdasarkan tarif per kWh.
-- **Decision Support System (DSS)**: Mesin aturan deterministik yang memberikan rekomendasi aksi proteksi beban lebih (*overload*) dan risiko pemadaman dini hari sebelum fajar (*dawn blackout protection*).
-- **Grafik Live Watt vs VA**: Grafik area real-time dengan batas anotasi kontrak PLN.
-- **Saran AI (LLM)**: Kartu rekomendasi preskriptif berbasis LLM (Gemini / API kompatibel OpenAI). Dipicu otomatis saat status DSS berubah dan tiap 10 menit, atau manual lewat tombol *Minta Saran AI*. Aturan deterministik tetap menjadi penentu status; LLM hanya memberi saran tindakan.
-
-### 2. Riwayat & Analisis Telemetri (`/history`)
-- **Filter Fleksibel**: Tombol pintas preset (*Hari Ini*, *7 Hari*, *30 Hari*) dan formulir kustom rentang tanggal.
-- **KPI Summary Cards**: Total konsumsi kWh terukur, estimasi tagihan/biaya (Rp), beban semu puncak ($VA$), daya aktif puncak ($W$), dan rata-rata faktor daya ($PF$).
-- **4 Grafik Analitik Interaktif**:
-  1. *Profil Beban*: Daya Aktif ($W$) vs Daya Semu ($VA$) terhadap batas kontrak.
-  2. *Kualitas Listrik*: Dual-axis Tegangan RMS ($V$) & Kuat Arus RMS ($A$).
-  3. *Tren Saldo Kuota*: Saldo ($kWh$) & sisa jam pakai (*hours*).
-  4. *Histori Proyeksi TinyML*: Tren estimasi kuadran Q1–Q4 dari waktu ke waktu.
-- **Log Data & Ekspor CSV**: Tabel telemetri historis dengan tombol unduh file `.csv` untuk audit metrologi data luring.
-- **Sinkronisasi Beban di Navbar**: Menampilkan persentase beban aktual secara real-time via WebSocket.
+## Daftar Isi
+- [Arsitektur Sistem](#arsitektur-sistem)
+- [Fitur Utama](#fitur-utama)
+- [Struktur Repositori](#struktur-repositori)
+- [Spesifikasi Perangkat Keras & Pinout](#spesifikasi-perangkat-keras--pinout)
+- [Modul Pelatihan TinyML](#modul-pelatihan-tinyml)
+- [Panduan Instalasi & Menjalankan Sistem](#panduan-instalasi--menjalankan-sistem)
+  - [1. Setup & Flashing Firmware ESP32](#1-setup--flashing-firmware-esp32)
+  - [2. Menjalankan Backend FastAPI & Web Dashboard](#2-menjalankan-backend-fastapi--web-dashboard)
+- [Tata Cara Pengoperasian Alat](#tata-cara-pengoperasian-alat)
+- [Evaluasi & Performa Model](#evaluasi--performa-model)
+- [Kredit & Pengembang](#kredit--pengembang)
 
 ---
 
-## 🏗 Arsitektur Sistem
+## Arsitektur Sistem
 
-```mermaid
-flowchart LR
-    ESP32["ESP32 + Sensor PZEM/TinyML"] -->|MQTT Pub / JSON| Broker["MQTT Broker\n(HiveMQ Cloud / Local)"]
-    Broker -->|MQTT Sub| Backend["FastAPI Backend\n(Python 3.10+)"]
-    Backend -->|SQLite Inserts| DB[("power_meter.db\ntelemetry_history")]
-    Backend -->|WebSocket Broadcast| Client["Web Browser\n(Tailwind + ApexCharts)"]
-    Backend -->|REST API| Client
-```
+Sistem beroperasi dalam skema terpadu tiga lapisan (*three-tier architecture*):
 
-1. **Ingestion**: ESP32 mengukur parameter kelistrikan, menjalankan model TinyML terkompilasi, dan mengirimkan payload JSON ke topik MQTT broker.
-2. **Processing & Storage**: Backend FastAPI berlangganan topik MQTT, melakukan validasi tipe/nilai, mengevaluasi aturan DSS, dan mencatat riwayat ke SQLite (`telemetry_history`).
-3. **Distribution**: Data disiarkan seketika (*sub-second*) kepada semua peramban yang terhubung via WebSocket.
+![Diagram Arsitektur Sistem](Diagram_Alur_Pembuatan_dan_Arsitektur_Sistem.png)
+
+1. **Lapisan Tepi (*Edge IoT & TinyML*)**: Mikrokontroler ESP32 membaca sensor tegangan analog ZMPT101B dan sensor arus non-invasif SCT-013-000, menghitung parameter *True-RMS* per 1 detik, mencatat log saldo ke kartu MicroSD, dan mengeksekusi inferensi model TinyML AR-MLP secara mandiri tiap 15 menit.
+2. **Lapisan Komunikasi & Backend**: Pengiriman data telemetri JSON via Wi-Fi ke broker MQTT HiveMQ tiap 2 detik. Peladen *backend* FastAPI berlangganan (*subscribe*) ke topik telemetri, menyimpan riwayat konsumsi ke basis data SQLite, menjalankan sistem pendukung keputusan (DSS) berbasis aturan proteksi, dan memanggil Groq API (`openai/gpt-oss-20b`).
+3. **Lapisan Antarmuka (*Frontend Dashboard*)**: Antarmuka web reaktif (*Tailwind CSS* & *ApexCharts.js*) menyajikan data seketika melalui WebSocket, visualisasi kurva beban aktif vs semu, grafik proyeksi multi-horizon dinamis, riwayat konsumsi 15-menitan, serta kartu rekomendasi LLM.
 
 ---
 
-## 📂 Struktur Direktori
+## Fitur Utama
+
+- **Metrologi True-RMS & Power Factor**: Mengukur tegangan ($V_{\text{RMS}}$), arus ($I_{\text{RMS}}$), daya aktif ($P$ Watt), daya semu ($S$ VA), dan faktor daya ($\cos\phi$) secara simultan dengan kalibrasi pergeseran fase sampling.
+- **Penyimpanan Mandiri MicroSD 100%**: Saldo token, konfigurasi buffer 96 slot, dan log audit telemetri tersimpan sepenuhnya pada media penyimpanan lepas (*MicroSD Card*) dengan fitur pemulihan otomatis (*auto-recovery*) saat terjadi gangguan kartu.
+- **Input Token & Reset Fisik**: Memasukkan saldo kWh baru secara langsung lewat keypad matriks 4x4 dan konfirmasi visual pada layar OLED SSD1306, dilengkapi menu proteksi kombinasi tombol reset saldo dan pembersihan kartu.
+- **On-Device TinyML Multi-Horizon**: Model jaringan saraf tiruan *Autoregressive Multilayer Perceptron* (AR-MLP $8 \to 24 \to 12 \to 4$) berukuran 8,1 KB mengeksekusi prediksi konsumsi energi 24 jam ke depan ($Q_1–Q_4$) tanpa ketergantungan internet.
+- **Sistem Pendukung Keputusan (DSS) & Proteksi MCB**: Aturan lokal mendeteksi beban berlebih (>85% kapasitas 1.300 VA), mitigasi risiko pemadaman fajar (pukul 21.00–05.59), dan peringatan saldo kritis (<2,0 kWh).
+- **Rekomendasi Cerdas LLM (Groq API)**: Menghasilkan instruksi pengalihan jadwal pemakaian beban besar (*load shifting*) dan rekomendasi anggaran pengisian token dalam bahasa sehari-hari berformat JSON.
+- **Dasbor Web Interaktif**: Dilengkapi grafik *area chart* beban real-time, grafik batang proyeksi horizon dengan rentang jam operasional riil bertingkat, serta penyaring riwayat dan ekspor CSV.
+
+---
+
+## Struktur Repositori
 
 ```text
-website/
-├── recommender_engine.py # Penasihat LLM (Tier 3), tanpa dependensi tambahan
-├── main.py              # Server FastAPI, klien MQTT, WebSocket manager, DSS engine, & database handler
-├── requirements.txt     # Daftar pustaka dependensi Python
-├── power_meter.db       # Database SQLite lokal (dibuat otomatis jika belum ada)
-├── README.md            # Dokumentasi platform web
-└── templates/
-    ├── index.html       # Halaman dasbor telemetri real-time
-    └── history.html     # Halaman riwayat telemetri, analitik, dan ekspor CSV
+.
+├── Diagram_Alur_Pembuatan_dan_Arsitektur_Sistem.png  # Diagram blok alur dan arsitektur terpadu
+├── skematik.png                                      # Skematik perkabelan rangkaian Fritzing
+├── README.md                                         # Dokumentasi teknis utama repositori
+│
+├── pelatihan/                                        # Pipeline pelatihan model machine learning
+│   ├── pre-training.ipynb                            # Jupyter Notebook pelatihan TinyML AR-MLP
+│   ├── tinyml_energy_features.csv                   # Dataset fitur hasil prapemrosesan kontinu
+│   ├── feature_mean.npy / feature_std.npy            # Parameter Z-Score normalisasi fitur
+│   ├── target_mean.npy / target_std.npy              # Parameter Z-Score denormalisasi target
+│   ├── pretrained_energy_model.keras                 # Bobot model terlatih format Keras
+│   ├── pretrained_weights.weights.h5                 # Checkpoint bobot optimal pelatihan
+│   └── tinyml_model.h                                # Parameter model diekspor ke header C++
+│
+├── power-meter/                                      # Kode sumber firmware mikrokontroler ESP32
+│   ├── power-meter.ino                               # Sketsa utama Arduino C++
+│   ├── tinyml_inference.h                            # Mesin inferensi on-device C++ mandiri
+│   └── tinyml_model.h                                # Bobot dan parameter jaringan saraf tiruan
+│
+└── website/                                          # Server backend FastAPI & Web Dashboard
+    ├── main.py                                       # Backend FastAPI, MQTT listener, & WebSocket
+    ├── recommender_engine.py                         # DSS deterministik & LLM Groq client
+    ├── README.md                                     # Panduan instalasi dan deployment web
+    ├── .env.example                                  # Template variabel lingkungan backend
+    └── templates/
+        ├── index.html                                # Dasbor pemantauan real-time & proyeksi
+        └── history.html                              # Halaman riwayat audit data & ekspor CSV
+
 ```
 
 ---
 
-## 🎨 Spesifikasi Tampilan & Antarmuka
+## Spesifikasi Perangkat Keras & Pinout
 
-Antarmuka dibangun dengan panduan **Modern Dark Mode** untuk meminimalkan kelelahan mata (*eye strain*) operator:
-- **Canvas / Background Utama**: `#121212` (bukan hitam pekat murni `#000000`).
-- **Sidebar & Top Header**: `#181818` (elevasi menengah).
-- **Cards & Container Permukaan**: `#1E1E1E` (permukaan terangkat).
-- **Border & Pembatas**: `#2E2E2E` (halus dan tidak mengaburkan fokus).
-- **Hover State**: `#262626`.
-- **Teks Utama**: `#E0E0E0` (rasio kontras $\ge 7:1$, nyaman dibaca tanpa silau).
-- **Teks Sekunder**: `#9E9E9E` (memenuhi standar WCAG AA $\ge 4.5:1$).
-- **Aksen Utama**: `#3B82F6` (*Electric Blue*).
-- **Tipografi**: `Inter` sans-serif dengan fitur `tabular-nums` untuk angka metrologi yang stabil.
-- **Responsif Mobile**: Drawer samping tersembunyi dengan tombol hamburger di sisi kiri atas dan *overlay backdrop* di atas konten.
+Rangkaian dibangun menggunakan mikrokontroler ESP32 WROOM-32 (38-pin) dengan konfigurasi sambungan berikut:
+
+| Komponen / Modul | Antarmuka / Jalur | Pin ESP32 (GPIO) | Keterangan |
+| --- | --- | --- | --- |
+| **Sensor Tegangan ZMPT101B** | Analog (ADC1) | **GPIO 35** | Pembacaan gelombang sinus AC tegangan |
+| **Sensor Arus SCT-013-000 + Modul** | Analog (ADC1) | **GPIO 34** | CT sensor arus non-invasif kabel fasa |
+| **Layar OLED SSD1306 (0,96")** | I2C (SDA) | **GPIO 21** | Komunikasi data layar OLED |
+|  | I2C (SCL) | **GPIO 22** | Sinyal clock layar OLED |
+| **Modul MicroSD Card** | SPI (CS) | **GPIO 5** | Chip Select bus SPI |
+|  | SPI (MOSI) | **GPIO 23** | Master Out Slave In |
+|  | SPI (MISO) | **GPIO 19** | Master In Slave Out |
+|  | SPI (SCK) | **GPIO 18** | Serial Clock bus SPI |
+| **Keypad Matriks 4×4** | Baris (Row 1–4) | **GPIO 13, 12, 14, 26** | Pemindaian tombol input |
+|  | Kolom (Col 1–4) | **GPIO 27, 25, 33, 32** | Pemindaian tombol input |
+| **Catu Daya Adaptor** | DC Jack | **5V / 2A** | Terhubung ke pin VIN ESP32 & modul |
 
 ---
 
-## 🔌 Dokumentasi API & WebSocket
+## Modul Pelatihan TinyML
 
-### 1. Halaman Web (HTML)
-| Method | Endpoint | Deskripsi |
-| :--- | :--- | :--- |
-| `GET` | `/` | Dasbor pemantauan real-time |
-| `GET` | `/history` | Halaman riwayat dan audit telemetri |
+Pelatihan model deret waktu dijalankan menggunakan dataset konsumsi daya rumah tangga *UCI Individual Household Electric Power Consumption*:
 
-### 2. WebSocket Real-Time
-- **URL**: `ws://<HOST>:<PORT>/ws` (atau `wss://` saat HTTPS aktif).
-- **Arah**: Server ke Klien (Siaran otomatis setiap ada paket MQTT baru).
-- **Format Payload (JSON)**:
-```json
-{
-  "voltage": 224.5,
-  "current": 1.250,
-  "power": 265.4,
-  "apparent_power": 280.6,
-  "pf": 94.6,
-  "saldo_kwh": 14.85,
-  "runway_hours": 55.9,
-  "q1": 0.45,
-  "q2": 0.60,
-  "q3": 0.82,
-  "q4": 0.51,
-  "timestamp": "2026-10-10 14:30:00",
-  "kontrak_daya_va": 1300,
-  "tarif_per_kwh": 1444.7,
-  "device_ready": true,
-  "age_s": 0.4,
-  "dss": {
-    "status": "OPTIMAL",
-    "badge_color": "emerald",
-    "title": "BEBAN DALAM BATAS AMAN",
-    "message": "Daya semu berada di bawah ambang batas waspada.",
-    "excess_watt": 0.0
-  }
-}
+1. **Prapemrosesan Kontinu**: Data 1-menitan diagregasi ke blok 15 menit ($kW \times 0{,}25 = kWh$), diskalakan ke profil daya 1.300 VA ($\text{rasio } 1300 / 6000$), dan celah kosong diinterpolasi linear maksimal 3 jam.
+2. **Rekayasa 8 Fitur Masukan**:
+* $x_0 - x_3$: 4 lag konsumsi energi 1 jam terakhir ($t_0, t_{-1}, t_{-2}, t_{-3}$).
+* $x_4$: Rata-rata konsumsi 6 jam terakhir (24 blok 15-menitan).
+* $x_5$: Konsumsi pada jam yang sama 24 jam sebelumnya (lag 96 blok).
+* $x_6 - x_7$: Siklus sirkadian waktu $(\sin, \cos)$ jam desimal 24 jam.
+
+
+3. **Target Multi-Horizon 24 Jam**:
+* $Q_1$ (0–6 jam), $Q_2$ (6–12 jam), $Q_3$ (12–18 jam), dan $Q_4$ (18–24 jam).
+
+
+4. **Pencegahan Data Leakage**:
+* Fitur dan target dibentuk pada runtun waktu kontinu penuh sebelum difilter untuk musim hangat/tropis (Mei–September) guna mencegah lompatan baris 7 bulan.
+* Diterapkan **Purge Gap sebesar 96 sampel (24 jam)** di antara batas data latih, validasi, dan uji agar horizon target masa depan tidak melintasi batas pemisahan set data.
+
+
+5. **Arsitektur Jaringan**:
+* Model *Autoregressive Multilayer Perceptron* (AR-MLP) berkonfigurasi $8 \to 24 \to 12 \to 4$ dengan aktivasi *LeakyReLU* (slope 0,01) dan fungsi galat *Huber Loss* ($\delta = 1{,}0$).
+
+
+
+---
+
+## Evaluasi & Performa Model
+
+Pengujian pada data uji independen menghasilkan metrik performa berikut:
+
+| Metrik Evaluasi | Model TinyML (AR-MLP) | Baseline Rata-rata Latih | Baseline Persisten (6 Jam) | Peningkatan Akurasi |
+| --- | --- | --- | --- | --- |
+| **MAE Keseluruhan** | **0,3402 kWh** | 0,4359 kWh | 0,4429 kWh | **+22,0%** vs Rata-rata, **+23,2%** vs Persisten |
+| **RMSE Keseluruhan** | **0,4566 kWh** | — | — | — |
+| **Horizon Q1 (0–6 Jam)** | **0,3454 kWh** (MAPE 45,44%) | — | 0,4962 kWh | **+30,4%** lebih akurat |
+| **Horizon Q2 (6–12 Jam)** | **0,3370 kWh** (MAPE 40,46%) | — | 0,4254 kWh | **+20,8%** lebih akurat |
+| **Horizon Q3 (12–18 Jam)** | **0,3621 kWh** (MAPE 48,23%) | — | 0,5163 kWh | **+29,9%** lebih akurat |
+| **Horizon Q4 (18–24 Jam)** | **0,3163 kWh** (MAPE 37,20%) | — | 0,3337 kWh | **+5,2%** lebih akurat |
+
+*Model terbukti stabil di seluruh horizon prediksi dan mampu mengatasi pergeseran fase beban puncak harian tanpa mengalami lag fase seperti baseline persisten.*
+
+---
+
+## Panduan Instalasi & Menjalankan Sistem
+
+### 1. Setup & Flashing Firmware ESP32
+
+1. Pasang pustaka pendukung berikut melalui **Arduino Library Manager**:
+* `PubSubClient` by Nick O'Leary
+* `Adafruit SSD1306` & `Adafruit GFX Library`
+* `Keypad` by Mark Stanley & Alexander Brevig
+
+
+2. Buka berkas `power-meter/power-meter.ino` pada Arduino IDE.
+3. Pastikan berkas `tinyml_inference.h` dan `tinyml_model.h` berada dalam satu direktori dengan berkas `.ino`.
+4. Sesuaikan kredensial Wi-Fi pada baris kode:
+```cpp
+const char* WIFI_SSID = "NAMA_WIFI_ANDA";
+const char* WIFI_PASSWORD = "PASSWORD_WIFI_ANDA";
+
 ```
 
-### 3. REST API
-#### a. Ambil Data Histori
-- **Endpoint**: `GET /api/history`
-- **Query Parameters**:
-  - `start_date` *(opsional, string YYYY-MM-DD)*: Tanggal awal filter.
-  - `end_date` *(opsional, string YYYY-MM-DD)*: Tanggal akhir filter.
-  - `limit` *(opsional, integer, default: 500)*: Batas titik sampel grafik untuk downsampling.
-- **Contoh Respons**:
-```json
-{
-  "status": "success",
-  "summary": {
-    "total_records": 1250,
-    "total_kwh": 4.82,
-    "peak_va": 840.5,
-    "peak_watt": 790.0,
-    "avg_pf": 93.4,
-    "estimated_cost_rp": 6963,
-    "kontrak_daya_va": 1300
-  },
-  "series": [ ... ],
-  "table_data": [ ... ]
-}
-```
 
-#### a2. Saran AI (LLM)
-- `GET /api/ai-advisory`: saran terakhir dari cache (tidak memanggil LLM).
-- `POST /api/ai-advisory`: permintaan manual; memanggil LLM bila cooldown 15 detik terpenuhi.
-- **Respons**: `{"status": "success", "data": {"enabled": true, "model": "...", "advice": {"ringkasan_kondisi", "urgensi", "tindakan_rekomendasi", "dampak_tindakan", "saran_token", "source", "generated_at", "dss_status", "dss_title"}}}`
+5. Pilih board **DOIT ESP32 DEVKIT V1**, sambungkan kabel data micro-USB, dan tekan tombol **Upload**.
 
-#### b. Ekspor CSV
-- **Endpoint**: `GET /api/history/export`
-- **Query Parameters**: `start_date`, `end_date` *(opsional)*.
-- **Respons**: Streaming file unduhan `power_meter_YYYYMMDD_HHMMSS.csv`.
+### 2. Menjalankan Backend FastAPI & Web Dashboard
 
----
-
-## ⚙ Konfigurasi Lingkungan (Environment Variables)
-
-Variabel lingkungan dapat didefinisikan langsung pada sistem atau file `.env`:
-
-| Variabel | Tipe | Default | Deskripsi |
-| :--- | :--- | :--- | :--- |
-| `MQTT_BROKER` | String | `broker.hivemq.com` | Host / alamat broker MQTT |
-| `MQTT_PORT` | Integer | `1883` | Port broker MQTT |
-| `MQTT_TOPIC` | String | `elevate2026/powermeter/telemetry` | Topik langganan telemetri |
-| `KONTRAK_DAYA_VA`| Float | `1300.0` | Batas kapasitas MCB meteran (VA) |
-| `TARIF_PER_KWH` | Float | `1444.70` | Tarif listrik PLN golongan R1/1300 (Rp/kWh) |
-| `MAX_GAP_SECONDS`| Integer | `300` | Ambang jeda data untuk integrasi trapesium energi |
-| `LLM_API_KEY` | String | *(kosong)* | Kunci API LLM (alias `GEMINI_API_KEY`). Kosong = saran berbasis aturan saja |
-| `LLM_PROVIDER` | String | `gemini` | `gemini` atau `openai` (API kompatibel OpenAI: Groq, OpenRouter) |
-| `LLM_MODEL` | String | `gemini-3.1-flash-lite` | Nama model |
-| `LLM_BASE_URL` | String | *(kosong)* | Wajib bila `LLM_PROVIDER=openai`, mis. `https://api.groq.com/openai/v1` |
-| `LLM_PERIODIC_S` | Integer | `600` | Refresh berkala saat status tidak berubah |
-| `LLM_MIN_INTERVAL_S` | Integer | `30` | Jeda minimum antar panggilan otomatis |
-
----
-
-## 🛠 Panduan Instalasi & Menjalankan
-
-### 1. Prasyarat
-- Python 3.10 atau versi yang lebih baru
-- Akses internet untuk CDN Tailwind, Boxicons, dan ApexCharts
-
-### 2. Pemasangan Dependensi
-Pastikan berada pada direktori `website/`:
+1. Masuk ke direktori `website/`:
 ```bash
-# Buat dan aktifkan virtual environment (opsional tetapi disarankan)
-python3 -m venv .venv
-source .venv/bin/activate
+cd website
 
-# Pasang pustaka dependensi
-pip install -r requirements.txt
 ```
 
-Isi dependensi ([`requirements.txt`](file:///home/ridho/ngoding/IoT%20Prediksi%20kWh/website/requirements.txt)):
-- `fastapi`
-- `uvicorn`
-- `paho-mqtt`
-- `websockets`
-- `jinja2`
 
-### 3. Menjalankan Server
-Jalankan aplikasi menggunakan **Uvicorn**:
+2. Buat dan aktifkan lingkungan virtual Python (direkomendasikan Python 3.10+):
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+```
+
+
+3. Pasang paket dependensi:
+```bash
+pip install fastapi uvicorn pydantic paho-mqtt httpx jinja2 python-multipart
+
+```
+
+
+4. Salin file lingkungan dan masukkan API Key Groq Anda:
+```bash
+cp .env.example .env
+
+```
+
+
+Isi file `.env`:
+```env
+LLM_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxx
+KONTRAK_DAYA_VA=1300
+TARIF_PER_KWH=1444.70
+MQTT_BROKER=broker.hivemq.com
+MQTT_PORT=1883
+MQTT_TOPIC=elevate2026/powermeter/telemetry
+
+```
+
+
+5. Jalankan server backend:
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
 ```
-Aplikasi dapat diakses melalui browser pada:
-- **Dasbor Utama**: `http://localhost:8000`
-- **Riwayat & Analitik**: `http://localhost:8000/history`
-- **Dokumentasi Interaktif Swagger**: `http://localhost:8000/docs`
+
+
+6. Buka peramban (*browser*) dan akses dasbor pada alamat:
+`http://localhost:8000/` (Dasbor Real-Time) atau `http://localhost:8000/history` (Riwayat & Audit CSV).
 
 ---
 
-## ⚡ Optimasi Performa
+## Tata Cara Pengoperasian Alat
 
-Halaman riwayat dilengkapi serangkaian optimasi rendering untuk menjamin antarmuka tetap berjalan pada 60 FPS tanpa jeda (*zero UI freeze*):
-1. **Adaptive Sampling**: Kueri data histori otomatis menerapkan *step-based downsampling* ke batas optimal (150 titik) untuk grafik SVG, memangkas beban kalkulasi kurva Bezier hingga 85%.
-2. **Staggered Asynchronous Rendering**: Grafik dirender secara bertahap menggunakan *micro-task queue* agar thread JavaScript browser tidak terblokir.
-3. **Single DOM Reflow**: Injeksi 50 baris tabel telemetri menggunakan `DocumentFragment` untuk menghindari *DOM thrashing*.
-4. **Database Indexing**: Kolom `timestamp` pada SQLite dipasangi B-Tree index (`idx_telemetry_ts`) sehingga kueri rentang jutaan baris tetap responsif.
+1. **Pemasangan Sensor**: Kaitkan sensor arus SCT-013-000 pada salah satu kabel fasa instalasi rumah tanpa memotong kabel (*non-invasive*), serta hubungkan soket sensor tegangan ZMPT101B ke stopkontak AC.
+2. **Penyalaan Alat**: Hubungkan adaptor 5V/2A ke terminal DC jack ESP32. Perangkat akan membaca saldo token dari kartu MicroSD dan menghubungkan diri ke jaringan Wi-Fi rumah.
+3. **Pengisian Saldo Token (Top-Up)**:
+* Ketik langsung nominal kWh tambahan yang dibeli (contoh: tekan `2` lalu `0` untuk 20 kWh) lewat keypad.
+* Tekan tombol **`#`** untuk mengonfirmasi dan menyimpan saldo baru ke MicroSD.
+* Tekan tombol **`*`** untuk membatalkan atau menghapus angka.
 
+
+4. **Navigasi Tombol Keypad**:
+* **`[0-9]`**: Memasukkan digit angka penambahan token listrik.
+* **`[#]`**: Konfirmasi simpan data input.
+* **`[*]`**: Hapus digit / Kembali ke tampilan beranda OLED.
+* **`[A] -> [B] -> [D]`**: Menu pintasan reset saldo menjadi 0,00 kWh.
+* **`[A] -> [B] -> [C] -> [D]`**: Menu format dan pembersihan total seluruh berkas di MicroSD.
+
+
+5. **Pemantauan & Rekomendasi**: Buka dasbor web di ponsel atau laptop untuk memantau profil daya aktif (W), daya semu (VA), proyeksi multi-horizon $Q_1–Q_4$, serta menjalankan saran pengalihan jadwal alat berdaya besar.
