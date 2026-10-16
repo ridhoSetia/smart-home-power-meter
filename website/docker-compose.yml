@@ -39,7 +39,7 @@ services:
       # Mount file database SQLite agar riwayat metrologi tetap tersimpan di host
       - ./power_meter.db:/app/data/power_meter.db
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/docs\")' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:7080/docs\")' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -204,12 +204,12 @@ Isi dependensi ([`requirements.txt`](file:///home/ridho/ngoding/IoT%20Prediksi%2
 ### 3. Menjalankan Server Secara Lokal
 Jalankan aplikasi menggunakan **Uvicorn**:
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 7080 --reload
 ```
 Aplikasi dapat diakses melalui browser pada:
-- **Dasbor Utama**: `http://localhost:8000`
-- **Riwayat & Analitik**: `http://localhost:8000/history`
-- **Dokumentasi Interaktif Swagger**: `http://localhost:8000/docs`
+- **Dasbor Utama**: `http://localhost:7080`
+- **Riwayat & Analitik**: `http://localhost:7080/history`
+- **Dokumentasi Interaktif Swagger**: `http://localhost:7080/docs`
 
 ---
 

@@ -6,7 +6,7 @@
 services:
   web:
     # Aktifkan hot-reload uvicorn
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7080", "--reload"]
     volumes:
       # Mount file kode agar perubahan langsung terdeteksi seketika tanpa rebuild
       - ./main.py:/app/main.py
