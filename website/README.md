@@ -194,12 +194,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Isi dependensi ([`requirements.txt`](file:///home/ridho/ngoding/IoT%20Prediksi%20kWh/website/requirements.txt)):
-- `fastapi`
-- `uvicorn`
-- `paho-mqtt`
-- `websockets`
-- `jinja2`
+Isi dependensi utama ([`requirements.txt`](file:///home/ridho/ngoding/IoT%20Prediksi%20kWh/website/requirements.txt)):
+- `fastapi` & `starlette` (Web framework)
+- `uvicorn` (ASGI Server)
+- `pydantic` & `pydantic-core` (Data validation)
+- `paho-mqtt` (Protokol telemetri MQTT)
+- `websockets` (Streaming real-time)
+- `jinja2` & `MarkupSafe` (Template HTML)
+- `aiosqlite` (Database asynchronous SQLite)
+- Utilitas tipe & telemetri (`opentelemetry-api`, `anyio`, dll.)
 
 ### 3. Menjalankan Server Secara Lokal
 Jalankan aplikasi menggunakan **Uvicorn**:
