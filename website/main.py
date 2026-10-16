@@ -38,7 +38,7 @@ from recommender_engine import LLMAdvisor
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "power_meter.db")
+DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "power_meter.db"))
 
 # Daya kontrak rumah & tarif (dapat disesuaikan via .env)
 KONTRAK_DAYA_VA: float = float(os.getenv("KONTRAK_DAYA_VA", 1300.0))
@@ -69,6 +69,9 @@ def get_db_connection():
 
 
 def init_db():
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")

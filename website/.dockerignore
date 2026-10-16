@@ -1,0 +1,35 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Git & Editor configuration
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Environment files with sensitive credentials
+.env
+.env.local
+
+# Local SQLite databases (persisted via Docker volumes)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Data exports and logs
+*.csv
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+

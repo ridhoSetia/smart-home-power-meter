@@ -201,7 +201,7 @@ Isi dependensi ([`requirements.txt`](file:///home/ridho/ngoding/IoT%20Prediksi%2
 - `websockets`
 - `jinja2`
 
-### 3. Menjalankan Server
+### 3. Menjalankan Server Secara Lokal
 Jalankan aplikasi menggunakan **Uvicorn**:
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -210,6 +210,68 @@ Aplikasi dapat diakses melalui browser pada:
 - **Dasbor Utama**: `http://localhost:8000`
 - **Riwayat & Analitik**: `http://localhost:8000/history`
 - **Dokumentasi Interaktif Swagger**: `http://localhost:8000/docs`
+
+---
+
+## 🐳 Arsitektur & Panduan Docker Container
+
+Aplikasi ini telah dikemas secara lengkap menggunakan **Docker** dan **Docker Compose** dengan konfigurasi *security-hardened* (non-root user `appuser`), layer caching teroptimasi, persistent database volume, dan *integrated healthcheck*.
+
+### 1. File Konfigurasi Docker yang Disediakan
+- **`Dockerfile`**: Image berbasis `python:3.11-slim`, non-root user, otomatis mengisolasi runtime dan memantau kesehatan via HTTP healthcheck.
+- **`docker-compose.yml`**: Orkestrasi multi-kontainer siap pakai (web application + opsi MQTT Broker Mosquitto lokal).
+- **`docker-compose.dev.yml`**: Konfigurasi override untuk mode pengembangan lokal dengan *hot-reload* aktif seketika saat kode diubah.
+- **`.dockerignore`**: Mencegah cache, virtualenv lokal, dan database membengkakkan context build Docker.
+
+### 2. Menjalankan Aplikasi dengan Docker Compose
+
+#### A. Mode Produksi / Standar (Menggunakan HiveMQ Cloud)
+```bash
+# Build dan jalankan kontainer di latar belakang (detached mode)
+docker compose up -d --build
+
+# Pantau log secara real-time
+docker compose logs -f web
+
+# Cek status dan healthcheck kontainer
+docker compose ps
+```
+
+#### B. Mode Pengembangan Lokal (Hot-Reload Aktif)
+Jika Anda ingin kode di host otomatis ter-update di dalam kontainer saat disimpan:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+#### C. Mode Mandiri dengan MQTT Broker Lokal (Offline / Lab)
+Jika ingin menjalankan broker MQTT Eclipse Mosquitto lokal di dalam kontainer:
+```bash
+docker compose --profile with-broker up -d
+```
+
+### 3. Menghentikan Kontainer
+```bash
+# Hentikan semua kontainer
+docker compose down
+
+# Hentikan sekaligus menghapus volume internal (jika ada)
+docker compose down -v
+```
+
+---
+
+## 💻 Panduan VS Code (Penyelesaian Garis Merah / Unresolved Imports)
+
+Jika membuka proyek ini di VS Code dan muncul garis bawah merah pada `import fastapi`, `import paho.mqtt`, dll.:
+1. **Penyebab**: VS Code secara default sering menggunakan Python global sistem (`/usr/bin/python3`), bukan Python dari `.venv` tempat pustaka terinstal.
+2. **Solusi Otomatis**: Proyek ini kini sudah dilengkapi:
+   - [`.vscode/settings.json`](file:///.vscode/settings.json): Mengarahkan `python.defaultInterpreterPath` ke `.venv/bin/python` dan mengaktifkan auto-activation.
+   - [`pyrightconfig.json`](file:///pyrightconfig.json): Mengonfigurasi engine analitik Pylance agar mendeteksi modul pada direktori `.venv`.
+3. **Penyelesaian Manual (Bila Diperlukan)**:
+   - Tekan `Ctrl + Shift + P` (atau `Cmd + Shift + P` di Mac).
+   - Ketik dan pilih: **`Python: Select Interpreter`**.
+   - Pilih interpreter yang mengarah ke `./.venv/bin/python`.
+   - Buka ulang file `main.py`, dan seluruh garis merah akan hilang.
 
 ---
 

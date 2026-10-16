@@ -1,0 +1,71 @@
+# ==============================================================================
+# SMART POWER METER IoT - DOCKER COMPOSE CONFIGURATION
+# ==============================================================================
+services:
+  # ----------------------------------------------------------------------------
+  # Layanan Web Platform (FastAPI + WebSocket + Decision Support System)
+  # ----------------------------------------------------------------------------
+  web:
+    container_name: smart_powermeter_web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: smart-powermeter:latest
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    # Memuat variabel lingkungan dari file .env lokal jika tersedia
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Arahkan path database ke folder volume persistent
+      - DB_PATH=/app/data/power_meter.db
+      # Fallback nilai default jika tidak disetel di .env
+      - MQTT_BROKER=${MQTT_BROKER:-broker.hivemq.com}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_TOPIC=${MQTT_TOPIC:-elevate2026/powermeter/telemetry}
+      - KONTRAK_DAYA_VA=${KONTRAK_DAYA_VA:-1300.0}
+      - TARIF_PER_KWH=${TARIF_PER_KWH:-1444.70}
+      - MAX_GAP_SECONDS=${MAX_GAP_SECONDS:-300}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-gemini-3.1-flash-lite}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_PERIODIC_S=${LLM_PERIODIC_S:-600}
+      - LLM_MIN_INTERVAL_S=${LLM_MIN_INTERVAL_S:-30}
+    volumes:
+      # Mount file database SQLite agar riwayat metrologi tetap tersimpan di host
+      - ./power_meter.db:/app/data/power_meter.db
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/docs\")' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - powermeter_network
+
+  # ----------------------------------------------------------------------------
+  # Layanan Opsional: Broker MQTT Lokal (Eclipse Mosquitto)
+  # Aktifkan jika ingin broker lokal tanpa tergantung internet/HiveMQ:
+  # Jalankan: docker compose --profile with-broker up -d
+  # ----------------------------------------------------------------------------
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: smart_powermeter_mqtt
+    restart: unless-stopped
+    profiles:
+      - with-broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    command: mosquitto -c /mosquitto-no-auth.conf
+    networks:
+      - powermeter_network
+
+networks:
+  powermeter_network:
+    name: powermeter_network
+    driver: bridge

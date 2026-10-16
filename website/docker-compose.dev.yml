@@ -1,0 +1,16 @@
+# ==============================================================================
+# SMART POWER METER IoT - DOCKER COMPOSE DEVELOPMENT OVERRIDE
+# Digunakan untuk pengembangan lokal dengan fitur hot-reload otomatis:
+# Jalankan: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# ==============================================================================
+services:
+  web:
+    # Aktifkan hot-reload uvicorn
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      # Mount file kode agar perubahan langsung terdeteksi seketika tanpa rebuild
+      - ./main.py:/app/main.py
+      - ./recommender_engine.py:/app/recommender_engine.py
+      - ./templates:/app/templates
+      - ./power_meter.db:/app/data/power_meter.db
+
