@@ -1,7 +1,7 @@
 /*
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * SISTEM PENYIMPANAN: 100% MICROSD MURNI DENGAN PROTEKSI ATOMIC WRITE & WEAR-REDUCTION
+ * REVISI: STABILISASI TEGANGAN TRUE-RMS & PROTEKSI KETAHANAN MICROSD 24/7
  * ==================================================================================
  */
 
@@ -74,7 +74,7 @@ const float NO_LOAD_CURRENT_THRESHOLD = 0.010f;
 const float NO_LOAD_POWER_THRESHOLD = 0.10f;
 
 float v_rms = 0.0f, i_rms = 0.0f, p_active = 0.0f, p_apparent = 0.0f, power_factor = 0.0f;
-float i_rms_stable = 0.0f, p_active_stable = 0.0f, p_apparent_stable = 0.0f;
+float v_rms_stable = 0.0f, i_rms_stable = 0.0f, p_active_stable = 0.0f, p_apparent_stable = 0.0f;
 
 int raw_v_arr[MAX_SAMPLES];
 int raw_i_arr[MAX_SAMPLES];
@@ -110,7 +110,7 @@ unsigned long prevWifiRetry = 0;
 unsigned long prevMqttRetry = 0;
 unsigned long prevOledRefresh = 0;
 unsigned long prevSaldoPeriodicSave = 0;
-const unsigned long INTERVAL_15M = 900000;  // 15 menit
+const unsigned long INTERVAL_15M = 900000;
 
 // ================= PROTOTIPE FUNGSI =================
 void handleKeypad();
@@ -159,6 +159,7 @@ void setup() {
   mqttClient.setBufferSize(512);
 
   calculateACMetricsPresisi();
+  v_rms_stable = v_rms;
   i_rms_stable = i_rms;
   p_active_stable = p_active;
   p_apparent_stable = p_apparent;
@@ -187,6 +188,13 @@ void loop() {
 
     calculateACMetricsPresisi();
 
+    // Filter Smoothing Tegangan Eksponensial (EMA) agar stabil tidak melompat-lompat
+    if (v_rms_stable == 0.0f) {
+      v_rms_stable = v_rms;
+    } else {
+      v_rms_stable = (0.80f * v_rms_stable) + (0.20f * v_rms);
+    }
+
     if (i_rms == 0.0f) {
       i_rms_stable = 0.0f;
       p_active_stable = 0.0f;
@@ -211,8 +219,7 @@ void loop() {
     if (saldo_token_kwh < 0.0f) saldo_token_kwh = 0.0f;
     current_interval_kwh += delta_kwh;
 
-    // Simpan berkala ke SD jika selisih >= 0.05 kWh (mencegah keausan berlebih)
-    // ATAU tiap 5 menit sekali jika beban kecil terus menyala
+    // Simpan berkala ke SD jika selisih >= 0.05 kWh ATAU tiap 5 menit
     bool delta_threshold_reached = (abs(last_saved_saldo - saldo_token_kwh) >= 0.05f);
     bool periodic_save_due = (currentMillis - prevSaldoPeriodicSave >= 300000 && delta_kwh > 0.0f);
 
@@ -239,13 +246,13 @@ void loop() {
     }
   }
 
-  // 3. Pencatatan Log MicroSD (Dinaikkan ke 30 Detik untuk menjaga umur flash & ukuran file)
+  // 3. Pencatatan Log MicroSD (30 Detik)
   if (currentMillis - prevSdLogTime >= 30000) {
     prevSdLogTime = currentMillis;
     logTelemetryToSD();
   }
 
-  // 4. Publikasi MQTT HiveMQ (Tiap 2 Detik - Tetap Responsif di Web)
+  // 4. Publikasi MQTT (Tiap 2 Detik)
   if (currentMillis - prevMqttSendTime >= 2000) {
     prevMqttSendTime = currentMillis;
     publishTelemetry();
@@ -269,26 +276,25 @@ void loop() {
   }
 }
 
-// ================= SISTEM PENYIMPANAN MICROSD DENGAN PROTEKSI ATOMIC =================
+// ================= SISTEM PENYIMPANAN MICROSD =================
 void initSDCard() {
   SPI.begin(18, 19, 23, SD_CS_PIN);
-  if (!SD.begin(SD_CS_PIN, SPI, 400000)) {
-    Serial.println(F("[SD] Gagal mount! Pastikan koneksi pin CS=5, SCK=18, MOSI=23, MISO=19"));
+  // PERBAIKAN: Gunakan 4000000 (4 MHz) konsisten agar transfer data cepat dan tidak hang
+  if (!SD.begin(SD_CS_PIN, SPI, 4000000)) {
+    Serial.println(F("[SD] Gagal mount! Periksa perkabelan SPI"));
     sdCardAvailable = false;
     return;
   }
   if (SD.cardType() == CARD_NONE) {
-    Serial.println(F("[SD] Kartu fisik tidak terdeteksi."));
+    Serial.println(F("[SD] Kartu tidak terpasang."));
     sdCardAvailable = false;
     return;
   }
 
   sdCardAvailable = true;
-  Serial.println(F("[SD] MicroSD Card terdeteksi dan siap beroperasi!"));
+  Serial.println(F("[SD] MicroSD Card siap 24/7!"));
 
-  // Pemulihan otomatis: jika saldo.txt hilang akibat power-loss tetapi saldo.tmp ada
   if (!SD.exists(FILE_SALDO) && SD.exists(FILE_SALDO_TMP)) {
-    Serial.println(F("[SD] Memulihkan saldo dari berkas saldo.tmp..."));
     SD.rename(FILE_SALDO_TMP, FILE_SALDO);
   }
 
@@ -300,7 +306,7 @@ void initSDCard() {
       if (content.length() > 0) {
         saldo_token_kwh = content.toFloat();
         last_saved_saldo = saldo_token_kwh;
-        Serial.printf("[SD] Saldo berhasil dimuat: %.4f kWh\n", saldo_token_kwh);
+        Serial.printf("[SD] Saldo aktif: %.4f kWh\n", saldo_token_kwh);
       }
       f.close();
     }
@@ -319,37 +325,27 @@ void initSDCard() {
 }
 
 bool recoverSDCard() {
-  Serial.println(F("[SD] Mencoba inisialisasi pemulihan MicroSD..."));
   SD.end();
-  delay(100);
-
+  delay(50);
   if (SD.begin(SD_CS_PIN, SPI, 4000000)) {
     if (SD.cardType() != CARD_NONE) {
       sdCardAvailable = true;
-      Serial.println(F("[SD] MicroSD berhasil dipulihkan!"));
       return true;
     }
   }
-
   sdCardAvailable = false;
-  Serial.println(F("[SD] Gagal memulihkan MicroSD!"));
   return false;
 }
 
-// Penulisan Saldo Aman (Atomic Write: Tulis ke .tmp -> Flush -> Rename)
 void saveSaldoToSD(float saldo) {
   saldo_token_kwh = saldo;
   last_saved_saldo = saldo;
 
-  if (!sdCardAvailable) {
-    if (!recoverSDCard()) return;
-  }
+  if (!sdCardAvailable && !recoverSDCard()) return;
 
   File f = SD.open(FILE_SALDO_TMP, FILE_WRITE);
-  if (!f) {
-    if (recoverSDCard()) {
-      f = SD.open(FILE_SALDO_TMP, FILE_WRITE);
-    }
+  if (!f && recoverSDCard()) {
+    f = SD.open(FILE_SALDO_TMP, FILE_WRITE);
   }
 
   if (f) {
@@ -357,28 +353,19 @@ void saveSaldoToSD(float saldo) {
     f.flush();
     f.close();
 
-    // Hapus file asli dan rename .tmp menjadi file utama
     if (SD.exists(FILE_SALDO)) {
       SD.remove(FILE_SALDO);
     }
     SD.rename(FILE_SALDO_TMP, FILE_SALDO);
-    Serial.printf("[SD] Saldo aman tersimpan: %.4f kWh\n", saldo);
-  } else {
-    Serial.println(F("[SD] Error: Gagal menulis berkas saldo.tmp!"));
   }
 }
 
-// Penulisan Buffer Riwayat Aman (Atomic Write)
 void saveBufferToSD() {
-  if (!sdCardAvailable) {
-    if (!recoverSDCard()) return;
-  }
+  if (!sdCardAvailable && !recoverSDCard()) return;
 
   File f = SD.open(FILE_BUFF_TMP, FILE_WRITE);
-  if (!f) {
-    if (recoverSDCard()) {
-      f = SD.open(FILE_BUFF_TMP, FILE_WRITE);
-    }
+  if (!f && recoverSDCard()) {
+    f = SD.open(FILE_BUFF_TMP, FILE_WRITE);
   }
 
   if (f) {
@@ -391,7 +378,6 @@ void saveBufferToSD() {
       SD.remove(FILE_BUFFER);
     }
     SD.rename(FILE_BUFF_TMP, FILE_BUFFER);
-    Serial.println(F("[SD] Buffer riwayat berhasil disimpan aman."));
   }
 }
 
@@ -411,7 +397,6 @@ bool loadBufferFromSD() {
       f.read((uint8_t*)&buffer_idx, sizeof(buffer_idx));
       f.read((uint8_t*)energy_buffer_15m, sizeof(energy_buffer_15m));
       f.close();
-      Serial.println(F("[SD] Buffer riwayat 24 jam berhasil dimuat!"));
       return true;
     }
     f.close();
@@ -420,10 +405,7 @@ bool loadBufferFromSD() {
 }
 
 void wipeAllSDCardFiles() {
-  if (!sdCardAvailable) {
-    Serial.println(F("[SD] Kartu SD offline, pembersihan dibatalkan!"));
-    return;
-  }
+  if (!sdCardAvailable) return;
 
   if (SD.exists(FILE_SALDO)) SD.remove(FILE_SALDO);
   if (SD.exists(FILE_SALDO_TMP)) SD.remove(FILE_SALDO_TMP);
@@ -445,26 +427,20 @@ void wipeAllSDCardFiles() {
     logFile.flush();
     logFile.close();
   }
-
-  Serial.println(F("[SD] MicroSD berhasil dibersihkan total!"));
 }
 
 void logTelemetryToSD() {
-  if (!sdCardAvailable) {
-    if (!recoverSDCard()) return;
-  }
+  if (!sdCardAvailable && !recoverSDCard()) return;
 
   File logFile = SD.open(FILE_LOG, FILE_APPEND);
-  if (!logFile) {
-    if (recoverSDCard()) {
-      logFile = SD.open(FILE_LOG, FILE_APPEND);
-    }
+  if (!logFile && recoverSDCard()) {
+    logFile = SD.open(FILE_LOG, FILE_APPEND);
   }
 
   if (logFile) {
     logFile.printf("%lu,%.2f,%.3f,%.2f,%.2f,%.2f,%.4f,%.2f,%.3f,%.3f,%.3f,%.3f\n",
                    millis() / 1000,
-                   v_rms, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
+                   v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
                    saldo_token_kwh, token_runway_hours,
                    predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
     logFile.flush();
@@ -472,7 +448,7 @@ void logTelemetryToSD() {
   }
 }
 
-// ================= LOGIKA KEYPAD MATRIKS =================
+// ================= LOGIKA KEYPAD =================
 void handleKeypad() {
   char key = keypad.getKey();
   if (!key) return;
@@ -545,14 +521,12 @@ void handleKeypad() {
     if (input_kwh_str.length() > 0) {
       input_kwh_str.remove(input_kwh_str.length() - 1);
     }
-
     if (input_kwh_str.length() == 0 && key_sequence.length() == 0) {
       is_input_mode = false;
       waiting_format_confirm = false;
       updateOLED();
       return;
     }
-
     renderInputScreen();
     return;
   }
@@ -612,11 +586,9 @@ void renderInputScreen() {
     display.setTextSize(1);
     display.setCursor(15, 4);
     display.println(F("=== MENU RESET ==="));
-
     display.setTextSize(2);
     display.setCursor(50, 20);
     display.print(key_sequence);
-
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setTextSize(1);
     display.setCursor(0, 50);
@@ -633,11 +605,9 @@ void renderInputScreen() {
     display.setTextSize(1);
     display.setCursor(15, 4);
     display.println(F("INPUT TOKEN kWh"));
-
     display.setTextSize(2);
     display.setCursor(10, 20);
     display.printf("+%s", input_kwh_str.c_str());
-
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setTextSize(1);
     display.setCursor(0, 50);
@@ -655,7 +625,7 @@ void updateOLED() {
   display.setTextSize(1);
 
   display.setCursor(0, 0);
-  display.printf("V:%3.0f P:%3.0fW S:%3.0fVA", v_rms, p_active_stable, p_apparent_stable);
+  display.printf("V:%3.0f P:%3.0fW S:%3.0fVA", v_rms_stable, p_active_stable, p_apparent_stable);
 
   display.setCursor(0, 12);
   display.printf("Arus  : %5.3f A", i_rms_stable);
@@ -673,19 +643,28 @@ void updateOLED() {
   display.display();
 }
 
-// ================= METROLOGI TRUE-RMS PRESISI =================
+// ================= METROLOGI TRUE-RMS PRESISI & STABIL =================
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
   long sum_raw_v = 0, sum_raw_i = 0;
 
+  // Sampling kontinu murni 200 ms (10 siklus 50Hz) tanpa interupsi keypad
   while ((millis() - start_time) < SAMPLING_PERIOD_MS && n_samples < MAX_SAMPLES) {
-    int v_val = analogRead(PIN_VOLTAGE);
 
+    // Oversampling 4x pada Tegangan untuk membuang noise ADC ESP32
+    int v_accum = 0;
+    for (int k = 0; k < 4; k++) {
+      v_accum += analogRead(PIN_VOLTAGE);
+      delayMicroseconds(4);
+    }
+    int v_val = v_accum >> 2;
+
+    // Oversampling 4x pada Arus
     int i_accum = 0;
     for (int k = 0; k < 4; k++) {
       i_accum += analogRead(PIN_CURRENT);
-      delayMicroseconds(6);
+      delayMicroseconds(4);
     }
     int i_val = i_accum >> 2;
 
@@ -694,10 +673,6 @@ void calculateACMetricsPresisi() {
     sum_raw_v += v_val;
     sum_raw_i += i_val;
     n_samples++;
-
-    if ((n_samples % 15) == 0) {
-      handleKeypad();
-    }
 
     delayMicroseconds(320);
   }
@@ -765,11 +740,9 @@ void warmupTinyMLWithCurrentLoad() {
   tinyml_predict(features, predicted_q);
 
   is_ml_warmed_up = true;
-  Serial.printf("[TinyML] Warm-up selesai: Q1=%.3f, Q2=%.3f, Q3=%.3f, Q4=%.3f\n",
-                predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
 }
 
-// ================= EKSTRAKSI FITUR TINYML SINKRON MODEL =================
+// ================= EKSTRAKSI FITUR TINYML =================
 void build_features(float* features) {
   features[0] = energy_buffer_15m[buffer_idx];
   features[1] = energy_buffer_15m[(buffer_idx - 1 + BUFFER_SIZE) % BUFFER_SIZE];
@@ -830,7 +803,7 @@ void publishTelemetry() {
            "{\"voltage\":%.2f,\"current\":%.3f,\"power\":%.2f,\"apparent_power\":%.2f,\"pf\":%.2f,"
            "\"saldo_kwh\":%.4f,\"runway_hours\":%.2f,"
            "\"q1\":%.3f,\"q2\":%.3f,\"q3\":%.3f,\"q4\":%.3f}",
-           v_rms, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
+           v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
            saldo_token_kwh, token_runway_hours,
            predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
 

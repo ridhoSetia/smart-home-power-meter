@@ -56,6 +56,23 @@ HTTP_TIMEOUT_S = 25
 
 REQUIRED_KEYS = ("ringkasan_kondisi", "urgensi", "tindakan_rekomendasi",
                  "dampak_tindakan", "saran_token")
+
+KEY_ALIASES = {
+    "ringkasan_kondisi": ["ringkasan_kondisi", "ringkasan", "kondisi", "summary", "penjelasan", "deskripsi", "status_kondisi"],
+    "urgensi": ["urgensi", "urgency", "tingkat_urgensi", "level", "status_urgensi"],
+    "tindakan_rekomendasi": ["tindakan_rekomendasi", "tindakan", "rekomendasi", "langkah", "actions", "rekomendasi_tindakan", "saran_tindakan", "saran"],
+    "dampak_tindakan": ["dampak_tindakan", "dampak", "manfaat", "impact", "penghematan", "efek", "dampak_rekomendasi"],
+    "saran_token": ["saran_token", "token", "saran_saldo", "saldo", "rekomendasi_token", "token_advice", "info_token"],
+}
+
+DEFAULT_ADVICE_VALUES = {
+    "ringkasan_kondisi": "Pemakaian daya listrik rumah saat ini dalam batas pemantauan normal.",
+    "urgensi": "AMAN",
+    "tindakan_rekomendasi": ["Gunakan alat listrik berdaya besar secara bergantian untuk efisiensi."],
+    "dampak_tindakan": "Membantu mencegah MCB trip dan menjaga saldo token listrik tetap hemat.",
+    "saran_token": "Pantau sisa kuota token kWh secara berkala.",
+}
+
 # Urgensi minimum yang dipaksakan oleh aturan deterministik (LLM tak boleh menurunkan)
 URGENCY_FLOOR = {"DANGER": "BAHAYA", "WARNING": "WASPADA"}
 URGENCY_RANK = {"AMAN": 0, "WASPADA": 1, "BAHAYA": 2}
@@ -168,14 +185,22 @@ Keluarkan output HANYA dalam format JSON valid dengan skema berikut:
         """Panggilan HTTP sinkron (dijalankan di thread agar event loop tidak terblokir)."""
         if LLM_PROVIDER == "openai":
             url = f"{LLM_BASE_URL}/chat/completions"
-            body = {"model": LLM_MODEL, "temperature": 0.3,
+            sys_prompt = (
+                "Anda adalah penasihat energi listrik rumah tangga di Indonesia. "
+                "Anda WAJIB selalu merespons HANYA dalam format JSON valid dan WAJIB menyertakan tepat 5 kunci berikut: "
+                "'ringkasan_kondisi', 'urgensi', 'tindakan_rekomendasi', 'dampak_tindakan', dan 'saran_token'."
+            )
+            body = {"model": LLM_MODEL, "temperature": 0.2,
                     "response_format": {"type": "json_object"},
-                    "messages": [{"role": "user", "content": prompt}]}
+                    "messages": [
+                        {"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": prompt}
+                    ]}
             headers = {"Authorization": f"Bearer {LLM_API_KEY}"}
         else:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{LLM_MODEL}:generateContent"
             body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.3,
+                    "generationConfig": {"temperature": 0.2,
                                          "responseMimeType": "application/json"}}
             headers = {"x-goog-api-key": LLM_API_KEY}
         headers["Content-Type"] = "application/json"
@@ -196,21 +221,53 @@ Keluarkan output HANYA dalam format JSON valid dengan skema berikut:
     @staticmethod
     def _parse(text: str) -> Dict[str, Any]:
         text = text.strip()
+        if "```json" in text:
+            text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in text:
+            text = text.split("```", 1)[1].split("```", 1)[0].strip()
+
         start, end = text.find("{"), text.rfind("}")
         if start < 0 or end <= start:
             raise ValueError("respons bukan JSON")
         data = json.loads(text[start:end + 1])
-        missing = [k for k in REQUIRED_KEYS if k not in data]
-        if missing:
-            raise ValueError(f"kunci hilang: {missing}")
-        acts = data["tindakan_rekomendasi"]
-        data["tindakan_rekomendasi"] = [str(a) for a in acts] if isinstance(acts, list) else [str(acts)]
-        data["urgensi"] = str(data["urgensi"]).upper()
-        if data["urgensi"] not in URGENCY_RANK:
-            data["urgensi"] = "WASPADA"
+
+        # Buka jika model membungkus respons dalam objek lain
+        for wrapper in ("rekomendasi", "data", "advisory", "advice", "result"):
+            if wrapper in data and isinstance(data[wrapper], dict):
+                data = data[wrapper]
+                break
+
+        result = {}
+        for canon, aliases in KEY_ALIASES.items():
+            val = None
+            for a in aliases:
+                if a in data and data[a] is not None and str(data[a]).strip():
+                    val = data[a]
+                    break
+            if val is None:
+                val = DEFAULT_ADVICE_VALUES[canon]
+            result[canon] = val
+
+        acts = result["tindakan_rekomendasi"]
+        if isinstance(acts, list):
+            result["tindakan_rekomendasi"] = [str(a).strip() for a in acts if str(a).strip()]
+        elif isinstance(acts, str) and acts.strip():
+            result["tindakan_rekomendasi"] = [acts.strip()]
+        else:
+            result["tindakan_rekomendasi"] = DEFAULT_ADVICE_VALUES["tindakan_rekomendasi"]
+
+        if not result["tindakan_rekomendasi"]:
+            result["tindakan_rekomendasi"] = DEFAULT_ADVICE_VALUES["tindakan_rekomendasi"]
+
+        urg = str(result["urgensi"]).upper().strip()
+        if urg not in URGENCY_RANK:
+            urg = "AMAN" if "AMAN" in urg else ("BAHAYA" if "BAHAYA" in urg or "DANGER" in urg else "WASPADA")
+        result["urgensi"] = urg
+
         for k in ("ringkasan_kondisi", "dampak_tindakan", "saran_token"):
-            data[k] = str(data[k])
-        return {k: data[k] for k in REQUIRED_KEYS}
+            result[k] = str(result[k]).strip()
+
+        return result
 
     def _fallback(self, dss: Dict[str, Any], reason: str) -> Dict[str, Any]:
         """Saran berbasis aturan bila LLM tidak tersedia."""
