@@ -13,7 +13,7 @@ services:
     image: smart-powermeter:latest
     restart: unless-stopped
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-7080}:7080"
     # Memuat variabel lingkungan dari file .env lokal jika tersedia
     env_file:
       - path: .env
