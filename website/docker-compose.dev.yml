@@ -12,5 +12,5 @@ services:
       - ./main.py:/app/main.py
       - ./recommender_engine.py:/app/recommender_engine.py
       - ./templates:/app/templates
-      - ./power_meter.db:/app/data/power_meter.db
+      - powermeter_data:/app/data
 

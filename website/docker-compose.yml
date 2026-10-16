@@ -36,8 +36,8 @@ services:
       - LLM_PERIODIC_S=${LLM_PERIODIC_S:-600}
       - LLM_MIN_INTERVAL_S=${LLM_MIN_INTERVAL_S:-30}
     volumes:
-      # Mount file database SQLite agar riwayat metrologi tetap tersimpan di host
-      - ./power_meter.db:/app/data/power_meter.db
+      # Named volume persistent agar SQLite tidak bermasalah dengan izin file / folder kosong
+      - powermeter_data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:7080/docs\")' || exit 1"]
       interval: 30s
@@ -69,3 +69,7 @@ networks:
   powermeter_network:
     name: powermeter_network
     driver: bridge
+
+volumes:
+  powermeter_data:
+    name: powermeter_data

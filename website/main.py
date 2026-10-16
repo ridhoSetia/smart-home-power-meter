@@ -38,7 +38,14 @@ from recommender_engine import LLMAdvisor
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "power_meter.db"))
+def resolve_db_path() -> str:
+    path = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "power_meter.db"))
+    # Proteksi: Jika path berupa direktori (misal Docker me-mount volume ke nama folder), arahkan ke file di dalamnya
+    if os.path.exists(path) and os.path.isdir(path):
+        path = os.path.join(path, "power_meter.db")
+    return path
+
+DB_PATH = resolve_db_path()
 
 # Daya kontrak rumah & tarif (dapat disesuaikan via .env)
 KONTRAK_DAYA_VA: float = float(os.getenv("KONTRAK_DAYA_VA", 1300.0))
@@ -69,10 +76,25 @@ def get_db_connection():
 
 
 def init_db():
+    global DB_PATH
+    DB_PATH = resolve_db_path()
     db_dir = os.path.dirname(os.path.abspath(DB_PATH))
     if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir, exist_ok=True)
-    conn = get_db_connection()
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+        except Exception as _e:
+            print(f"[!] Gagal membuat direktori database {db_dir}: {_e}")
+    try:
+        conn = get_db_connection()
+    except sqlite3.OperationalError as _e:
+        print(f"[!] Gagal membuka SQLite pada '{DB_PATH}': {_e}")
+        fallback_path = os.path.join(os.path.dirname(__file__), "power_meter.db")
+        if DB_PATH != fallback_path and not os.path.isdir(fallback_path):
+            print(f"[*] Menggunakan fallback database lokal: {fallback_path}")
+            DB_PATH = fallback_path
+            conn = get_db_connection()
+        else:
+            raise _e
     cursor = conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("""

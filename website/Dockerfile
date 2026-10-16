@@ -22,8 +22,7 @@ COPY requirements.txt .
 # Install dependensi Python tanpa cache untuk menghemat ruang image
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Buat folder data untuk database SQLite dan berikan hak akses penuh ke appuser
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
+RUN mkdir -p /app/data && chown -R appuser:appuser /app && chmod -R 777 /app/data
 
 # Salin source code aplikasi
 COPY --chown=appuser:appuser main.py recommender_engine.py ./
