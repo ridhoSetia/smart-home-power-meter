@@ -39,7 +39,18 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 def resolve_db_path() -> str:
-    path = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "power_meter.db"))
+    env_path = os.getenv("DB_PATH")
+    if env_path:
+        path = env_path
+    else:
+        data_dir = os.path.join(os.path.dirname(__file__), "data")
+        data_db = os.path.join(data_dir, "power_meter.db")
+        root_db = os.path.join(os.path.dirname(__file__), "power_meter.db")
+        if os.path.exists(data_db) or os.path.isdir(data_dir):
+            path = data_db
+        else:
+            path = root_db
+
     # Proteksi: Jika path berupa direktori (misal Docker me-mount volume ke nama folder), arahkan ke file di dalamnya
     if os.path.exists(path) and os.path.isdir(path):
         path = os.path.join(path, "power_meter.db")
@@ -84,6 +95,17 @@ def init_db():
             os.makedirs(db_dir, exist_ok=True)
         except Exception as _e:
             print(f"[!] Gagal membuat direktori database {db_dir}: {_e}")
+
+    # Migrasi / Seed otomatis: Jika target DB belum ada, tapi power_meter.db lama ada di root
+    if not os.path.exists(DB_PATH):
+        root_db = os.path.join(os.path.dirname(__file__), "power_meter.db")
+        if os.path.exists(root_db) and os.path.isfile(root_db) and os.path.abspath(root_db) != os.path.abspath(DB_PATH):
+            try:
+                import shutil
+                shutil.copy2(root_db, DB_PATH)
+                print(f"[*] Berhasil menyalin database awal dari {root_db} ke {DB_PATH}")
+            except Exception as _e:
+                print(f"[!] Gagal menyalin database awal: {_e}")
     try:
         conn = get_db_connection()
     except sqlite3.OperationalError as _e:

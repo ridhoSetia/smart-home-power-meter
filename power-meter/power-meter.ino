@@ -1,7 +1,7 @@
 /*
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * SISTEM PENYIMPANAN: 100% MICROSD MURNI DENGAN PROTEKSI ATOMIC WRITE & WEAR-REDUCTION
+ * REVISI: SAMPLING INTERVAL TETAP (10 SIKLUS PENUH) + FILTER TEGANGAN + ATOMIC WRITE SD
  * ==================================================================================
  */
 
@@ -16,6 +16,9 @@
 #include "SD.h"
 #include "SPI.h"
 #include "tinyml_inference.h"
+
+// Set ke 1 untuk mencetak diagnosa sampling ke Serial Monitor (cek clipping & jitter)
+#define DEBUG_SAMPLING 1
 
 // ================= OLED SSD1306 (I2C: GPIO 21, 22) =================
 #define SCREEN_WIDTH 128
@@ -63,8 +66,10 @@ PubSubClient mqttClient(espClient);
 // ================= PIN SENSOR ADC1 =================
 #define PIN_VOLTAGE 35
 #define PIN_CURRENT 34
-#define SAMPLING_PERIOD_MS 200
 #define MAX_SAMPLES 400
+// 500 us x 400 sampel = 200 ms = tepat 10 siklus 50 Hz (jika jaringan 60 Hz: 12 siklus, juga bulat)
+#define SAMPLE_INTERVAL_US 500
+#define OVERSAMPLE_COUNT 4  // jumlah pembacaan ADC per sampel (harus 1, 2, atau 4)
 
 const float V_CAL = 5581.51f;
 const float I_CAL = 111.53f;
@@ -74,6 +79,7 @@ const float NO_LOAD_CURRENT_THRESHOLD = 0.010f;
 const float NO_LOAD_POWER_THRESHOLD = 0.10f;
 
 float v_rms = 0.0f, i_rms = 0.0f, p_active = 0.0f, p_apparent = 0.0f, power_factor = 0.0f;
+float v_rms_stable = 0.0f;
 float i_rms_stable = 0.0f, p_active_stable = 0.0f, p_apparent_stable = 0.0f;
 
 int raw_v_arr[MAX_SAMPLES];
@@ -84,6 +90,7 @@ float saldo_token_kwh = 20.0f;
 float last_saved_saldo = 20.0f;
 float current_interval_kwh = 0.0f;
 float token_runway_hours = 999.0f;
+unsigned long prevSaldoPeriodicSave = 0;
 
 #define BUFFER_SIZE 96
 float energy_buffer_15m[BUFFER_SIZE] = { 0.0f };
@@ -109,8 +116,8 @@ unsigned long prevInterval15m = 0;
 unsigned long prevWifiRetry = 0;
 unsigned long prevMqttRetry = 0;
 unsigned long prevOledRefresh = 0;
-unsigned long prevSaldoPeriodicSave = 0;
-const unsigned long INTERVAL_15M = 900000;  // 15 menit
+unsigned long prevSdRetryTime = 0;
+const unsigned long INTERVAL_15M = 900000;
 
 // ================= PROTOTIPE FUNGSI =================
 void handleKeypad();
@@ -124,7 +131,6 @@ void handleMQTT();
 void publishTelemetry();
 void warmupTinyMLWithCurrentLoad();
 void initSDCard();
-bool recoverSDCard();
 void saveSaldoToSD(float saldo);
 void logTelemetryToSD();
 void saveBufferToSD();
@@ -158,7 +164,9 @@ void setup() {
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setBufferSize(512);
 
+  // Inisialisasi awal pembacaan AC
   calculateACMetricsPresisi();
+  v_rms_stable = (v_rms >= 20.0f) ? v_rms : 0.0f;
   i_rms_stable = i_rms;
   p_active_stable = p_active;
   p_apparent_stable = p_apparent;
@@ -187,6 +195,15 @@ void loop() {
 
     calculateACMetricsPresisi();
 
+    // Filter tegangan (EMA)
+    if (v_rms < 20.0f) {
+      v_rms_stable = 0.0f;
+    } else if (v_rms_stable == 0.0f) {
+      v_rms_stable = v_rms;
+    } else {
+      v_rms_stable = (0.8f * v_rms_stable) + (0.2f * v_rms);
+    }
+
     if (i_rms == 0.0f) {
       i_rms_stable = 0.0f;
       p_active_stable = 0.0f;
@@ -211,12 +228,11 @@ void loop() {
     if (saldo_token_kwh < 0.0f) saldo_token_kwh = 0.0f;
     current_interval_kwh += delta_kwh;
 
-    // Simpan berkala ke SD jika selisih >= 0.05 kWh (mencegah keausan berlebih)
-    // ATAU tiap 5 menit sekali jika beban kecil terus menyala
-    bool delta_threshold_reached = (abs(last_saved_saldo - saldo_token_kwh) >= 0.05f);
-    bool periodic_save_due = (currentMillis - prevSaldoPeriodicSave >= 300000 && delta_kwh > 0.0f);
+    // SIMPAN SALDO AMAN: tiap berkurang >= 0.05 kWh ATAU tiap 5 menit jika beban menyala
+    bool delta_threshold = (fabsf(last_saved_saldo - saldo_token_kwh) >= 0.05f);
+    bool periodic_due = (currentMillis - prevSaldoPeriodicSave >= 300000 && delta_kwh > 0.0f);
 
-    if (delta_threshold_reached || periodic_save_due) {
+    if (delta_threshold || periodic_due) {
       prevSaldoPeriodicSave = currentMillis;
       saveSaldoToSD(saldo_token_kwh);
     }
@@ -239,13 +255,13 @@ void loop() {
     }
   }
 
-  // 3. Pencatatan Log MicroSD (Dinaikkan ke 30 Detik untuk menjaga umur flash & ukuran file)
+  // 3. Pencatatan log berkala ke MicroSD (tiap 30 detik)
   if (currentMillis - prevSdLogTime >= 30000) {
     prevSdLogTime = currentMillis;
     logTelemetryToSD();
   }
 
-  // 4. Publikasi MQTT HiveMQ (Tiap 2 Detik - Tetap Responsif di Web)
+  // 4. Publikasi MQTT HiveMQ (tiap 2 detik)
   if (currentMillis - prevMqttSendTime >= 2000) {
     prevMqttSendTime = currentMillis;
     publishTelemetry();
@@ -267,28 +283,32 @@ void loop() {
 
     logTelemetryToSD();
   }
+
+  // 6. Percobaan recovery SD Card non-blocking (tiap 30 detik jika kartu offline)
+  if (!sdCardAvailable && (currentMillis - prevSdRetryTime >= 30000)) {
+    prevSdRetryTime = currentMillis;
+    initSDCard();
+  }
 }
 
-// ================= SISTEM PENYIMPANAN MICROSD DENGAN PROTEKSI ATOMIC =================
+// ================= SISTEM PENYIMPANAN MICROSD BERSIH & AMAN =================
 void initSDCard() {
   SPI.begin(18, 19, 23, SD_CS_PIN);
-  if (!SD.begin(SD_CS_PIN, SPI, 400000)) {
-    Serial.println(F("[SD] Gagal mount! Pastikan koneksi pin CS=5, SCK=18, MOSI=23, MISO=19"));
+  if (!SD.begin(SD_CS_PIN, SPI, 4000000)) {
+    Serial.println(F("[SD] Kartu belum terpasang atau gagal mount. Sistem tetap berjalan tanpa SD."));
     sdCardAvailable = false;
     return;
   }
   if (SD.cardType() == CARD_NONE) {
-    Serial.println(F("[SD] Kartu fisik tidak terdeteksi."));
     sdCardAvailable = false;
     return;
   }
 
   sdCardAvailable = true;
-  Serial.println(F("[SD] MicroSD Card terdeteksi dan siap beroperasi!"));
+  Serial.println(F("[SD] MicroSD Card terdeteksi dan siap!"));
 
-  // Pemulihan otomatis: jika saldo.txt hilang akibat power-loss tetapi saldo.tmp ada
+  // Pulihkan jika ada berkas sementara yang belum sempat di-rename
   if (!SD.exists(FILE_SALDO) && SD.exists(FILE_SALDO_TMP)) {
-    Serial.println(F("[SD] Memulihkan saldo dari berkas saldo.tmp..."));
     SD.rename(FILE_SALDO_TMP, FILE_SALDO);
   }
 
@@ -318,69 +338,29 @@ void initSDCard() {
   }
 }
 
-bool recoverSDCard() {
-  Serial.println(F("[SD] Mencoba inisialisasi pemulihan MicroSD..."));
-  SD.end();
-  delay(100);
-
-  if (SD.begin(SD_CS_PIN, SPI, 4000000)) {
-    if (SD.cardType() != CARD_NONE) {
-      sdCardAvailable = true;
-      Serial.println(F("[SD] MicroSD berhasil dipulihkan!"));
-      return true;
-    }
-  }
-
-  sdCardAvailable = false;
-  Serial.println(F("[SD] Gagal memulihkan MicroSD!"));
-  return false;
-}
-
-// Penulisan Saldo Aman (Atomic Write: Tulis ke .tmp -> Flush -> Rename)
 void saveSaldoToSD(float saldo) {
   saldo_token_kwh = saldo;
   last_saved_saldo = saldo;
 
-  if (!sdCardAvailable) {
-    if (!recoverSDCard()) return;
-  }
+  if (!sdCardAvailable) return;
 
   File f = SD.open(FILE_SALDO_TMP, FILE_WRITE);
-  if (!f) {
-    if (recoverSDCard()) {
-      f = SD.open(FILE_SALDO_TMP, FILE_WRITE);
-    }
-  }
-
   if (f) {
     f.printf("%.4f\n", saldo);
     f.flush();
     f.close();
 
-    // Hapus file asli dan rename .tmp menjadi file utama
     if (SD.exists(FILE_SALDO)) {
       SD.remove(FILE_SALDO);
     }
     SD.rename(FILE_SALDO_TMP, FILE_SALDO);
-    Serial.printf("[SD] Saldo aman tersimpan: %.4f kWh\n", saldo);
-  } else {
-    Serial.println(F("[SD] Error: Gagal menulis berkas saldo.tmp!"));
   }
 }
 
-// Penulisan Buffer Riwayat Aman (Atomic Write)
 void saveBufferToSD() {
-  if (!sdCardAvailable) {
-    if (!recoverSDCard()) return;
-  }
+  if (!sdCardAvailable) return;
 
   File f = SD.open(FILE_BUFF_TMP, FILE_WRITE);
-  if (!f) {
-    if (recoverSDCard()) {
-      f = SD.open(FILE_BUFF_TMP, FILE_WRITE);
-    }
-  }
-
   if (f) {
     f.write((uint8_t*)&buffer_idx, sizeof(buffer_idx));
     f.write((uint8_t*)energy_buffer_15m, sizeof(energy_buffer_15m));
@@ -391,7 +371,6 @@ void saveBufferToSD() {
       SD.remove(FILE_BUFFER);
     }
     SD.rename(FILE_BUFF_TMP, FILE_BUFFER);
-    Serial.println(F("[SD] Buffer riwayat berhasil disimpan aman."));
   }
 }
 
@@ -411,7 +390,6 @@ bool loadBufferFromSD() {
       f.read((uint8_t*)&buffer_idx, sizeof(buffer_idx));
       f.read((uint8_t*)energy_buffer_15m, sizeof(energy_buffer_15m));
       f.close();
-      Serial.println(F("[SD] Buffer riwayat 24 jam berhasil dimuat!"));
       return true;
     }
     f.close();
@@ -420,10 +398,7 @@ bool loadBufferFromSD() {
 }
 
 void wipeAllSDCardFiles() {
-  if (!sdCardAvailable) {
-    Serial.println(F("[SD] Kartu SD offline, pembersihan dibatalkan!"));
-    return;
-  }
+  if (!sdCardAvailable) return;
 
   if (SD.exists(FILE_SALDO)) SD.remove(FILE_SALDO);
   if (SD.exists(FILE_SALDO_TMP)) SD.remove(FILE_SALDO_TMP);
@@ -445,26 +420,16 @@ void wipeAllSDCardFiles() {
     logFile.flush();
     logFile.close();
   }
-
-  Serial.println(F("[SD] MicroSD berhasil dibersihkan total!"));
 }
 
 void logTelemetryToSD() {
-  if (!sdCardAvailable) {
-    if (!recoverSDCard()) return;
-  }
+  if (!sdCardAvailable) return;
 
   File logFile = SD.open(FILE_LOG, FILE_APPEND);
-  if (!logFile) {
-    if (recoverSDCard()) {
-      logFile = SD.open(FILE_LOG, FILE_APPEND);
-    }
-  }
-
   if (logFile) {
     logFile.printf("%lu,%.2f,%.3f,%.2f,%.2f,%.2f,%.4f,%.2f,%.3f,%.3f,%.3f,%.3f\n",
                    millis() / 1000,
-                   v_rms, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
+                   v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
                    saldo_token_kwh, token_runway_hours,
                    predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
     logFile.flush();
@@ -655,7 +620,7 @@ void updateOLED() {
   display.setTextSize(1);
 
   display.setCursor(0, 0);
-  display.printf("V:%3.0f P:%3.0fW S:%3.0fVA", v_rms, p_active_stable, p_apparent_stable);
+  display.printf("V:%3.0f P:%3.0fW S:%3.0fVA", v_rms_stable, p_active_stable, p_apparent_stable);
 
   display.setCursor(0, 12);
   display.printf("Arus  : %5.3f A", i_rms_stable);
@@ -674,32 +639,32 @@ void updateOLED() {
 }
 
 // ================= METROLOGI TRUE-RMS PRESISI =================
+// Sampling dengan interval tetap (SAMPLE_INTERVAL_US) selama tepat MAX_SAMPLES sampel,
+// sehingga jendela pengukuran = jumlah siklus gelombang yang bulat -> RMS stabil.
+// handleKeypad() sengaja TIDAK dipanggil di dalam jendela ini (I2C OLED bisa memblokir).
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
   long sum_raw_v = 0, sum_raw_i = 0;
+  unsigned long next_us = micros();
 
-  while ((millis() - start_time) < SAMPLING_PERIOD_MS && n_samples < MAX_SAMPLES) {
-    int v_val = analogRead(PIN_VOLTAGE);
+  while (n_samples < MAX_SAMPLES) {
+    while ((long)(micros() - next_us) < 0) { }  // tunggu waktu sampling tepat
+    next_us += SAMPLE_INTERVAL_US;
 
-    int i_accum = 0;
-    for (int k = 0; k < 4; k++) {
+    int v_accum = 0, i_accum = 0;
+    for (int k = 0; k < OVERSAMPLE_COUNT; k++) {
+      v_accum += analogRead(PIN_VOLTAGE);
       i_accum += analogRead(PIN_CURRENT);
-      delayMicroseconds(6);
     }
-    int i_val = i_accum >> 2;
+    int v_val = v_accum / OVERSAMPLE_COUNT;
+    int i_val = i_accum / OVERSAMPLE_COUNT;
 
     raw_v_arr[n_samples] = v_val;
     raw_i_arr[n_samples] = i_val;
     sum_raw_v += v_val;
     sum_raw_i += i_val;
     n_samples++;
-
-    if ((n_samples % 15) == 0) {
-      handleKeypad();
-    }
-
-    delayMicroseconds(320);
   }
 
   if (n_samples < 50) return;
@@ -749,6 +714,16 @@ void calculateACMetricsPresisi() {
     power_factor = p_active / p_apparent;
     if (power_factor > 1.0f) power_factor = 1.0f;
   }
+
+#if DEBUG_SAMPLING
+  int vmin = 4095, vmax = 0;
+  for (int n = 0; n < n_samples; n++) {
+    if (raw_v_arr[n] < vmin) vmin = raw_v_arr[n];
+    if (raw_v_arr[n] > vmax) vmax = raw_v_arr[n];
+  }
+  Serial.printf("[DBG] n=%d t=%lums vmin=%d vmax=%d off=%.1f vrms=%.1f\n",
+                n_samples, millis() - start_time, vmin, vmax, v_offset, v_rms);
+#endif
 }
 
 // ================= ADAPTASI AWAL TINYML =================
@@ -830,7 +805,7 @@ void publishTelemetry() {
            "{\"voltage\":%.2f,\"current\":%.3f,\"power\":%.2f,\"apparent_power\":%.2f,\"pf\":%.2f,"
            "\"saldo_kwh\":%.4f,\"runway_hours\":%.2f,"
            "\"q1\":%.3f,\"q2\":%.3f,\"q3\":%.3f,\"q4\":%.3f}",
-           v_rms, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
+           v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
            saldo_token_kwh, token_runway_hours,
            predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
 

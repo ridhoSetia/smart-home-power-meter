@@ -28,8 +28,8 @@ RUN mkdir -p /app/data && chown -R appuser:appuser /app && chmod -R 777 /app/dat
 COPY --chown=appuser:appuser main.py recommender_engine.py ./
 COPY --chown=appuser:appuser templates/ ./templates/
 
-# Beralih ke non-root user untuk keamanan container
-USER appuser
+# Menghindari masalah izin tulis (permission denied) pada bind-mount folder host dengan UID berbeda
+# USER appuser
 
 # Port default aplikasi
 EXPOSE 7080

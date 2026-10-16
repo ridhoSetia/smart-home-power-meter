@@ -63,9 +63,11 @@ flowchart LR
 
 ```text
 website/
+├── data/
+│   ├── .gitkeep         # Menjamin direktori data terlacak di Git
+│   └── power_meter.db   # Database SQLite lokal & host (otomatis dibuat & sinkron dengan container)
 ├── main.py              # Server FastAPI, klien MQTT, WebSocket manager, DSS engine, & database handler
 ├── requirements.txt     # Daftar pustaka dependensi Python
-├── power_meter.db       # Database SQLite lokal (dibuat otomatis jika belum ada)
 ├── README.md            # Dokumentasi platform web
 └── templates/
     ├── index.html       # Halaman dasbor telemetri real-time

@@ -13,7 +13,11 @@ __pycache__/
 *$py.class
 .env
 .venv/
-power_meter.db
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+!website/data/.gitkeep
 
 # MicroSD data dumps
 *.dat
