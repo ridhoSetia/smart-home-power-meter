@@ -1,7 +1,8 @@
 /*
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * REVISI: ZERO-CROSSING PERIOD VALIDATION + KEYPAD (# = DESIMAL, D = ENTER)
+ * REVISI: NOISE-FLOOR COMPENSATION (16x OVERSAMPLING) + SIKLUS ZERO-CROSSING VALID
+ * FITUR KEYPAD: [#] = KOMA DESIMAL (.), [D] = ENTER / SIMPAN TOP-UP SALDO
  * ==================================================================================
  */
 
@@ -68,10 +69,10 @@ PubSubClient mqttClient(espClient);
 
 const float V_CAL = 5581.51f;
 const float I_CAL = 111.53f;
-const int PHASE_SAMPLE_SHIFT = -3;
-const float FINE_PHASE_TUNE = 0.45f;
-const float NO_LOAD_CURRENT_THRESHOLD = 0.010f;
-const float NO_LOAD_POWER_THRESHOLD = 0.10f;
+const int PHASE_SAMPLE_SHIFT = -1;
+const float FINE_PHASE_TUNE = 0.20f;
+const float NO_LOAD_CURRENT_THRESHOLD = 0.015f;
+const float NO_LOAD_POWER_THRESHOLD = 0.15f;
 
 float v_rms = 0.0f, i_rms = 0.0f, p_active = 0.0f, p_apparent = 0.0f, power_factor = 0.0f;
 float v_rms_stable = 0.0f, i_rms_stable = 0.0f, p_active_stable = 0.0f, p_apparent_stable = 0.0f;
@@ -201,6 +202,7 @@ void loop() {
       i_rms_stable = 0.0f;
       p_active_stable = 0.0f;
       p_apparent_stable = 0.0f;
+      power_factor = 0.0f;
     } else {
       if (i_rms_stable == 0.0f) {
         i_rms_stable = i_rms;
@@ -210,6 +212,15 @@ void loop() {
       i_rms_stable = (0.75f * i_rms_stable) + (0.25f * i_rms);
       p_active_stable = (0.75f * p_active_stable) + (0.25f * p_active);
       p_apparent_stable = (0.75f * p_apparent_stable) + (0.25f * p_apparent);
+
+      // Hitung Faktor Daya dari sinyal daya yang sudah stabil
+      if (p_apparent_stable > 0.5f && i_rms_stable > NO_LOAD_CURRENT_THRESHOLD) {
+        float pf_calc = p_active_stable / p_apparent_stable;
+        if (pf_calc > 1.0f) pf_calc = 1.0f;
+        power_factor = pf_calc;
+      } else {
+        power_factor = 0.0f;
+      }
     }
 
     if (!is_ml_warmed_up && p_active_stable > 0.1f) {
@@ -652,13 +663,14 @@ void updateOLED() {
   display.display();
 }
 
-// ================= METROLOGI TRUE-RMS DENGAN VALIDASI PERIODE SIKLUS =================
+// ================= METROLOGI TRUE-RMS DENGAN KOMPENSASI NOISE FLOOR =================
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
   long sum_raw_v = 0, sum_raw_i = 0;
 
   while ((millis() - start_time) < SAMPLING_PERIOD_MS && n_samples < MAX_SAMPLES) {
+    // 1. Oversampling 4x pada Tegangan
     int v_accum = 0;
     for (int k = 0; k < 4; k++) {
       v_accum += analogRead(PIN_VOLTAGE);
@@ -666,12 +678,13 @@ void calculateACMetricsPresisi() {
     }
     int v_val = v_accum >> 2;
 
+    // 2. Oversampling 16x pada Sensor Arus (Meredam noise floor ADC pada beban kecil)
     int i_accum = 0;
-    for (int k = 0; k < 4; k++) {
+    for (int k = 0; k < 16; k++) {
       i_accum += analogRead(PIN_CURRENT);
-      delayMicroseconds(4);
+      delayMicroseconds(2);
     }
-    int i_val = i_accum >> 2;
+    int i_val = i_accum >> 4;
 
     raw_v_arr[n_samples] = v_val;
     raw_i_arr[n_samples] = i_val;
@@ -679,7 +692,7 @@ void calculateACMetricsPresisi() {
     sum_raw_i += i_val;
     n_samples++;
 
-    delayMicroseconds(320);
+    delayMicroseconds(180);
   }
 
   if (n_samples < 100) return;
@@ -691,6 +704,7 @@ void calculateACMetricsPresisi() {
   int zc_indices[25];
   int zc_count = 0;
 
+  // Deteksi Zero-Crossing dengan filter histeresis dan validasi periode minimum (35 sampel)
   for (int n = 0; n < n_samples; n++) {
     float v_diff = (float)raw_v_arr[n] - v_offset_approx;
     if (v_diff < -HYST_THRESHOLD) {
@@ -737,9 +751,24 @@ void calculateACMetricsPresisi() {
     sum_i_sq += (double)(i_inst * i_inst);
   }
 
-  float v_calc_raw = (sqrt(sum_v_sq / cycle_samples) / 4095.0f) * V_CAL;
-  i_rms = (sqrt(sum_i_sq / cycle_samples) / 4095.0f) * I_CAL;
+  // 1. Kompensasi Noise Adaptif (Hanya kurangi noise jika arus sangat kecil < 0.3 A)
+  // Pada beban besar seperti teko listrik, jangan kurangi mean_i_sq agar I_RMS tidak menyusut
+  double mean_v_sq = sum_v_sq / cycle_samples;
+  double mean_i_sq = sum_i_sq / cycle_samples;
 
+  if (mean_i_sq < 100.0) {  // Hanya aktif untuk beban kecil di bawah ~60 Watt
+    const double NOISE_VARIANCE_I = 16.0;
+    if (mean_i_sq > NOISE_VARIANCE_I) {
+      mean_i_sq -= NOISE_VARIANCE_I;
+    } else {
+      mean_i_sq = 0.0;
+    }
+  }
+
+  float v_calc_raw = (sqrt(mean_v_sq) / 4095.0f) * V_CAL;
+  i_rms = (sqrt(mean_i_sq) / 4095.0f) * I_CAL;
+
+  // Glitch filter tegangan
   if (v_rms_stable > 180.0f && (v_calc_raw > 265.0f || v_calc_raw < 150.0f)) {
     v_rms = v_rms_stable;
   } else if (v_calc_raw < 50.0f) {
@@ -748,6 +777,7 @@ void calculateACMetricsPresisi() {
     v_rms = v_calc_raw;
   }
 
+  // 2. Perhitungan Daya Nyata Sesuai Sinkronisasi Fasa
   double sum_p_inst = 0.0;
   int valid_p = 0;
 
@@ -772,6 +802,11 @@ void calculateACMetricsPresisi() {
   if (p_active < 0.0f) p_active = 0.0f;
 
   p_apparent = v_rms * i_rms;
+
+  // 3. Batasan Konsistensi Fisika: Daya Semu (S) tidak boleh lebih kecil dari Daya Aktif (P)
+  if (p_active > p_apparent) {
+    p_apparent = p_active;  // Kunci agar S minimal sama dengan P (PF tidak pernah > 1.0)
+  }
 
   if (i_rms == 0.0f || p_apparent < 0.5f) {
     power_factor = 0.0f;
