@@ -1,7 +1,7 @@
 /*
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * REVISI: TOMBOL [#] UNTUK DESIMAL (.), TOMBOL [D] UNTUK ENTER / SIMPAN TOP-UP
+ * REVISI: ZERO-CROSSING PERIOD VALIDATION + KEYPAD (# = DESIMAL, D = ENTER)
  * ==================================================================================
  */
 
@@ -453,7 +453,6 @@ void handleKeypad() {
   char key = keypad.getKey();
   if (!key) return;
 
-  // Konfirmasi Format SD
   if (waiting_format_confirm) {
     if (key == 'D') {
       wipeAllSDCardFiles();
@@ -470,7 +469,6 @@ void handleKeypad() {
     return;
   }
 
-  // Tombol Menu A, B, C
   if (key == 'A') {
     is_input_mode = true;
     input_kwh_str = "";
@@ -495,7 +493,6 @@ void handleKeypad() {
     return;
   }
 
-  // Tombol D: Sekarang menjadi ENTER / SIMPAN TOP-UP
   if (key == 'D') {
     if (input_kwh_str.length() > 0) {
       float added_kwh = input_kwh_str.toFloat();
@@ -517,7 +514,6 @@ void handleKeypad() {
     return;
   }
 
-  // Tombol Angka (0 - 9)
   if (key >= '0' && key <= '9') {
     is_input_mode = true;
     key_sequence = "";
@@ -528,14 +524,12 @@ void handleKeypad() {
     return;
   }
 
-  // Tombol # : Sekarang menjadi TANDA KOMA / DESIMAL (.)
   if (key == '#') {
     is_input_mode = true;
     key_sequence = "";
-    // Cek agar tidak ada titik desimal ganda
     if (input_kwh_str.indexOf('.') == -1) {
       if (input_kwh_str.length() == 0) {
-        input_kwh_str += "0.";  // Jika ditekan saat masih kosong langsung buat "0."
+        input_kwh_str += "0.";
       } else if (input_kwh_str.length() < 7) {
         input_kwh_str += ".";
       }
@@ -544,7 +538,6 @@ void handleKeypad() {
     return;
   }
 
-  // Tombol * : Backspace / Batal
   if (key == '*') {
     if (input_kwh_str.length() > 0) {
       input_kwh_str.remove(input_kwh_str.length() - 1);
@@ -627,7 +620,6 @@ void renderInputScreen() {
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setTextSize(1);
     display.setCursor(0, 50);
-    // Tampilan teks petunjuk baru: D untuk Simpan, # untuk titik, * untuk Hapus
     display.println(F("[D]OK  [#].  [*]Del"));
     display.display();
     return;
@@ -660,7 +652,7 @@ void updateOLED() {
   display.display();
 }
 
-// ================= METROLOGI TRUE-RMS PRESISI & SINKRON SIKLUS PENUH =================
+// ================= METROLOGI TRUE-RMS DENGAN VALIDASI PERIODE SIKLUS =================
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
@@ -690,28 +682,31 @@ void calculateACMetricsPresisi() {
     delayMicroseconds(320);
   }
 
-  if (n_samples < 80) return;
+  if (n_samples < 100) return;
 
   float v_offset_approx = (float)sum_raw_v / n_samples;
 
+  const float HYST_THRESHOLD = 40.0f;
   bool armed = false;
   int zc_indices[25];
   int zc_count = 0;
 
   for (int n = 0; n < n_samples; n++) {
     float v_diff = (float)raw_v_arr[n] - v_offset_approx;
-    if (v_diff < -25.0f) {
+    if (v_diff < -HYST_THRESHOLD) {
       armed = true;
     }
     if (armed && v_diff >= 0.0f) {
-      if (zc_count < 25) {
-        zc_indices[zc_count++] = n;
+      if (zc_count == 0 || (n - zc_indices[zc_count - 1] >= 35)) {
+        if (zc_count < 25) {
+          zc_indices[zc_count++] = n;
+        }
       }
       armed = false;
     }
   }
 
-  if (zc_count < 2) {
+  if (zc_count < 3) {
     v_rms = 0.0f;
     i_rms = 0.0f;
     p_active = 0.0f;
@@ -724,10 +719,9 @@ void calculateACMetricsPresisi() {
   int end_idx = zc_indices[zc_count - 1];
   int cycle_samples = end_idx - start_idx;
 
-  if (cycle_samples < 40) return;
+  if (cycle_samples < 70) return;
 
-  long sum_v_exact = 0;
-  long sum_i_exact = 0;
+  long sum_v_exact = 0, sum_i_exact = 0;
   for (int n = start_idx; n < end_idx; n++) {
     sum_v_exact += raw_v_arr[n];
     sum_i_exact += raw_i_arr[n];
@@ -743,11 +737,15 @@ void calculateACMetricsPresisi() {
     sum_i_sq += (double)(i_inst * i_inst);
   }
 
-  v_rms = (sqrt(sum_v_sq / cycle_samples) / 4095.0f) * V_CAL;
+  float v_calc_raw = (sqrt(sum_v_sq / cycle_samples) / 4095.0f) * V_CAL;
   i_rms = (sqrt(sum_i_sq / cycle_samples) / 4095.0f) * I_CAL;
 
-  if (v_rms < 50.0f) {
+  if (v_rms_stable > 180.0f && (v_calc_raw > 265.0f || v_calc_raw < 150.0f)) {
+    v_rms = v_rms_stable;
+  } else if (v_calc_raw < 50.0f) {
     v_rms = 0.0f;
+  } else {
+    v_rms = v_calc_raw;
   }
 
   double sum_p_inst = 0.0;
