@@ -310,7 +310,13 @@ def on_mqtt_message(client, userdata, msg):
         if "apparent_power" not in raw:
             record["apparent_power"] = record["voltage"] * record["current"]
 
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Ambil waktu dari ESP32 jika valid, jika kosong baru buat waktu lokal dari server
+        raw_timestamp = raw.get("timestamp")
+        if raw_timestamp and str(raw_timestamp).strip():
+            now_str = str(raw_timestamp).strip()
+        else:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         record["timestamp"] = now_str
 
         # Simpan ke memori lokal (salinan bersih tanpa dss)

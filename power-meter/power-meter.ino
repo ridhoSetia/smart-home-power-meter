@@ -1,7 +1,7 @@
 /*
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * REVISI: STABILISASI TEGANGAN TRUE-RMS & PROTEKSI KETAHANAN MICROSD 24/7
+ * REVISI KHUSUS: PENGUNCIAN SIKLUS PENUH (ZERO-CROSS) & STABILISASI TEGANGAN
  * ==================================================================================
  */
 
@@ -53,7 +53,7 @@ const int MQTT_PORT = 1883;
 const char* MQTT_TOPIC_PUB = "elevate2026/powermeter/telemetry";
 
 const char* NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET_SEC = 7 * 3600;
+const long GMT_OFFSET_SEC = 8 * 3600;
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 String mqttClientId = "ESP32_ELEVATE_" + String((uint32_t)ESP.getEfuseMac(), HEX);
@@ -188,11 +188,13 @@ void loop() {
 
     calculateACMetricsPresisi();
 
-    // Filter Smoothing Tegangan Eksponensial (EMA) agar stabil tidak melompat-lompat
+    // Filter Smoothing Tegangan: Mengunci pembacaan agar fluktuasi hanya 1-2 Volt
     if (v_rms_stable == 0.0f) {
       v_rms_stable = v_rms;
+    } else if (v_rms > 30.0f) {
+      v_rms_stable = (0.85f * v_rms_stable) + (0.15f * v_rms);
     } else {
-      v_rms_stable = (0.80f * v_rms_stable) + (0.20f * v_rms);
+      v_rms_stable = 0.0f;
     }
 
     if (i_rms == 0.0f) {
@@ -219,7 +221,6 @@ void loop() {
     if (saldo_token_kwh < 0.0f) saldo_token_kwh = 0.0f;
     current_interval_kwh += delta_kwh;
 
-    // Simpan berkala ke SD jika selisih >= 0.05 kWh ATAU tiap 5 menit
     bool delta_threshold_reached = (abs(last_saved_saldo - saldo_token_kwh) >= 0.05f);
     bool periodic_save_due = (currentMillis - prevSaldoPeriodicSave >= 300000 && delta_kwh > 0.0f);
 
@@ -279,7 +280,6 @@ void loop() {
 // ================= SISTEM PENYIMPANAN MICROSD =================
 void initSDCard() {
   SPI.begin(18, 19, 23, SD_CS_PIN);
-  // PERBAIKAN: Gunakan 4000000 (4 MHz) konsisten agar transfer data cepat dan tidak hang
   if (!SD.begin(SD_CS_PIN, SPI, 4000000)) {
     Serial.println(F("[SD] Gagal mount! Periksa perkabelan SPI"));
     sdCardAvailable = false;
@@ -643,16 +643,13 @@ void updateOLED() {
   display.display();
 }
 
-// ================= METROLOGI TRUE-RMS PRESISI & STABIL =================
+// ================= METROLOGI TRUE-RMS PRESISI & SINKRON SIKLUS PENUH =================
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
   long sum_raw_v = 0, sum_raw_i = 0;
 
-  // Sampling kontinu murni 200 ms (10 siklus 50Hz) tanpa interupsi keypad
   while ((millis() - start_time) < SAMPLING_PERIOD_MS && n_samples < MAX_SAMPLES) {
-
-    // Oversampling 4x pada Tegangan untuk membuang noise ADC ESP32
     int v_accum = 0;
     for (int k = 0; k < 4; k++) {
       v_accum += analogRead(PIN_VOLTAGE);
@@ -660,7 +657,6 @@ void calculateACMetricsPresisi() {
     }
     int v_val = v_accum >> 2;
 
-    // Oversampling 4x pada Arus
     int i_accum = 0;
     for (int k = 0; k < 4; k++) {
       i_accum += analogRead(PIN_CURRENT);
@@ -677,34 +673,86 @@ void calculateACMetricsPresisi() {
     delayMicroseconds(320);
   }
 
-  if (n_samples < 50) return;
+  if (n_samples < 80) return;
 
-  float v_offset = (float)sum_raw_v / n_samples;
-  float i_offset = (float)sum_raw_i / n_samples;
+  // 1. Estimasi kasar offset DC untuk acuan Schmitt-trigger
+  float v_offset_approx = (float)sum_raw_v / n_samples;
 
-  double sum_v_sq = 0.0, sum_i_sq = 0.0;
+  // 2. Deteksi Titik Potong Nol (Zero-Crossing) Bebas Noise dengan Histeresis -25 ADC
+  bool armed = false;
+  int zc_indices[25];
+  int zc_count = 0;
+
   for (int n = 0; n < n_samples; n++) {
+    float v_diff = (float)raw_v_arr[n] - v_offset_approx;
+    if (v_diff < -25.0f) {
+      armed = true;  // Sinyal benar-benar berada di lembah negatif
+    }
+    if (armed && v_diff >= 0.0f) {
+      if (zc_count < 25) {
+        zc_indices[zc_count++] = n;
+      }
+      armed = false;  // Reset, cegah trigger berulang akibat noise
+    }
+  }
+
+  // Jika tidak ada tegangan AC yang terdeteksi
+  if (zc_count < 2) {
+    v_rms = 0.0f;
+    i_rms = 0.0f;
+    p_active = 0.0f;
+    p_apparent = 0.0f;
+    power_factor = 0.0f;
+    return;
+  }
+
+  // 3. Kunci rentang sampling HANYA pada siklus gelombang penuh
+  int start_idx = zc_indices[0];
+  int end_idx = zc_indices[zc_count - 1];
+  int cycle_samples = end_idx - start_idx;
+
+  if (cycle_samples < 40) return;
+
+  // 4. Hitung Offset DC Eksak pada siklus penuh (rata-rata AC murni = 0)
+  long sum_v_exact = 0;
+  long sum_i_exact = 0;
+  for (int n = start_idx; n < end_idx; n++) {
+    sum_v_exact += raw_v_arr[n];
+    sum_i_exact += raw_i_arr[n];
+  }
+  float v_offset = (float)sum_v_exact / cycle_samples;
+  float i_offset = (float)sum_i_exact / cycle_samples;
+
+  // 5. Hitung RMS Murni Siklus Utuh
+  double sum_v_sq = 0.0, sum_i_sq = 0.0;
+  for (int n = start_idx; n < end_idx; n++) {
     float v_inst = (float)raw_v_arr[n] - v_offset;
     float i_inst = (float)raw_i_arr[n] - i_offset;
     sum_v_sq += (double)(v_inst * v_inst);
     sum_i_sq += (double)(i_inst * i_inst);
   }
 
-  v_rms = (sqrt(sum_v_sq / n_samples) / 4095.0f) * V_CAL;
-  i_rms = (sqrt(sum_i_sq / n_samples) / 4095.0f) * I_CAL;
+  v_rms = (sqrt(sum_v_sq / cycle_samples) / 4095.0f) * V_CAL;
+  i_rms = (sqrt(sum_i_sq / cycle_samples) / 4095.0f) * I_CAL;
 
+  if (v_rms < 50.0f) {
+    v_rms = 0.0f;
+  }
+
+  // 6. Hitung Daya Nyata Sesuai Sinkronisasi Fasa
   double sum_p_inst = 0.0;
   int valid_p = 0;
-  int start_idx = (1 > -PHASE_SAMPLE_SHIFT) ? 1 : -PHASE_SAMPLE_SHIFT;
-  int end_idx = (n_samples - 1 < n_samples - PHASE_SAMPLE_SHIFT - 1) ? (n_samples - 1) : (n_samples - PHASE_SAMPLE_SHIFT - 1);
 
   for (int n = start_idx; n < end_idx; n++) {
-    float v0 = (float)raw_v_arr[n + PHASE_SAMPLE_SHIFT] - v_offset;
-    float v1 = (float)raw_v_arr[n + PHASE_SAMPLE_SHIFT + 1] - v_offset;
-    float v_aligned = v0 + (FINE_PHASE_TUNE * (v1 - v0));
-    float i_inst = (float)raw_i_arr[n] - i_offset;
-    sum_p_inst += (double)(v_aligned * i_inst);
-    valid_p++;
+    int v_shifted_idx = n + PHASE_SAMPLE_SHIFT;
+    if (v_shifted_idx >= 0 && v_shifted_idx < n_samples - 1) {
+      float v0 = (float)raw_v_arr[v_shifted_idx] - v_offset;
+      float v1 = (float)raw_v_arr[v_shifted_idx + 1] - v_offset;
+      float v_aligned = v0 + (FINE_PHASE_TUNE * (v1 - v0));
+      float i_inst = (float)raw_i_arr[n] - i_offset;
+      sum_p_inst += (double)(v_aligned * i_inst);
+      valid_p++;
+    }
   }
 
   p_active = (valid_p > 0) ? ((sum_p_inst / valid_p) / (4095.0f * 4095.0f)) * (V_CAL * I_CAL) : 0.0f;
@@ -798,11 +846,22 @@ void handleMQTT() {
 void publishTelemetry() {
   if (!mqttClient.connected()) return;
 
-  char payload[380];
+  // Ambil waktu lokal dari ESP32
+  struct tm timeinfo;
+  char time_str[25] = "";
+
+  // Jika NTP sudah sinkron (tahun > 2020), format waktu jadi string
+  if (getLocalTime(&timeinfo) && timeinfo.tm_year > (2020 - 1900)) {
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  }
+
+  char payload[420];
   snprintf(payload, sizeof(payload),
-           "{\"voltage\":%.2f,\"current\":%.3f,\"power\":%.2f,\"apparent_power\":%.2f,\"pf\":%.2f,"
+           "{\"timestamp\":\"%s\","
+           "\"voltage\":%.2f,\"current\":%.3f,\"power\":%.2f,\"apparent_power\":%.2f,\"pf\":%.2f,"
            "\"saldo_kwh\":%.4f,\"runway_hours\":%.2f,"
            "\"q1\":%.3f,\"q2\":%.3f,\"q3\":%.3f,\"q4\":%.3f}",
+           time_str,
            v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
            saldo_token_kwh, token_runway_hours,
            predicted_q[0], predicted_q[1], predicted_q[2], predicted_q[3]);
