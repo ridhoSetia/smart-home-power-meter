@@ -1,7 +1,7 @@
 /*
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * REVISI KHUSUS: PENGUNCIAN SIKLUS PENUH (ZERO-CROSS) & STABILISASI TEGANGAN
+ * REVISI: TOMBOL [#] UNTUK DESIMAL (.), TOMBOL [D] UNTUK ENTER / SIMPAN TOP-UP
  * ==================================================================================
  */
 
@@ -53,7 +53,7 @@ const int MQTT_PORT = 1883;
 const char* MQTT_TOPIC_PUB = "elevate2026/powermeter/telemetry";
 
 const char* NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET_SEC = 8 * 3600;
+const long GMT_OFFSET_SEC = 8 * 3600;  // WITA (UTC+8)
 const int DAYLIGHT_OFFSET_SEC = 0;
 
 String mqttClientId = "ESP32_ELEVATE_" + String((uint32_t)ESP.getEfuseMac(), HEX);
@@ -188,7 +188,7 @@ void loop() {
 
     calculateACMetricsPresisi();
 
-    // Filter Smoothing Tegangan: Mengunci pembacaan agar fluktuasi hanya 1-2 Volt
+    // Filter Smoothing Tegangan Eksponensial (EMA)
     if (v_rms_stable == 0.0f) {
       v_rms_stable = v_rms;
     } else if (v_rms > 30.0f) {
@@ -448,11 +448,12 @@ void logTelemetryToSD() {
   }
 }
 
-// ================= LOGIKA KEYPAD =================
+// ================= LOGIKA KEYPAD (ENTER = D, KOMA/DESIMAL = #) =================
 void handleKeypad() {
   char key = keypad.getKey();
   if (!key) return;
 
+  // Konfirmasi Format SD
   if (waiting_format_confirm) {
     if (key == 'D') {
       wipeAllSDCardFiles();
@@ -469,6 +470,7 @@ void handleKeypad() {
     return;
   }
 
+  // Tombol Menu A, B, C
   if (key == 'A') {
     is_input_mode = true;
     input_kwh_str = "";
@@ -493,8 +495,16 @@ void handleKeypad() {
     return;
   }
 
+  // Tombol D: Sekarang menjadi ENTER / SIMPAN TOP-UP
   if (key == 'D') {
-    if (key_sequence == "AB") {
+    if (input_kwh_str.length() > 0) {
+      float added_kwh = input_kwh_str.toFloat();
+      saveSaldoToSD(saldo_token_kwh + added_kwh);
+      showPopup(F("TOP-UP BERHASIL!"), "+" + String(added_kwh, 2) + " kWh", 1500);
+      input_kwh_str = "";
+      key_sequence = "";
+      is_input_mode = false;
+    } else if (key_sequence == "AB") {
       saveSaldoToSD(0.0f);
       showPopup(F("SALDO RESET"), F("MENJADI 0.00 kWh"), 1500);
       key_sequence = "";
@@ -507,16 +517,34 @@ void handleKeypad() {
     return;
   }
 
+  // Tombol Angka (0 - 9)
   if (key >= '0' && key <= '9') {
     is_input_mode = true;
     key_sequence = "";
-    if (input_kwh_str.length() < 6) {
+    if (input_kwh_str.length() < 7) {
       input_kwh_str += key;
     }
     renderInputScreen();
     return;
   }
 
+  // Tombol # : Sekarang menjadi TANDA KOMA / DESIMAL (.)
+  if (key == '#') {
+    is_input_mode = true;
+    key_sequence = "";
+    // Cek agar tidak ada titik desimal ganda
+    if (input_kwh_str.indexOf('.') == -1) {
+      if (input_kwh_str.length() == 0) {
+        input_kwh_str += "0.";  // Jika ditekan saat masih kosong langsung buat "0."
+      } else if (input_kwh_str.length() < 7) {
+        input_kwh_str += ".";
+      }
+    }
+    renderInputScreen();
+    return;
+  }
+
+  // Tombol * : Backspace / Batal
   if (key == '*') {
     if (input_kwh_str.length() > 0) {
       input_kwh_str.remove(input_kwh_str.length() - 1);
@@ -528,22 +556,6 @@ void handleKeypad() {
       return;
     }
     renderInputScreen();
-    return;
-  }
-
-  if (key == '#') {
-    if (input_kwh_str.length() > 0) {
-      float added_kwh = input_kwh_str.toFloat();
-      saveSaldoToSD(saldo_token_kwh + added_kwh);
-      showPopup(F("TOP-UP BERHASIL!"), "+" + String(added_kwh, 2) + " kWh", 1500);
-      input_kwh_str = "";
-      key_sequence = "";
-      is_input_mode = false;
-    } else {
-      is_input_mode = false;
-      key_sequence = "";
-      updateOLED();
-    }
     return;
   }
 }
@@ -586,9 +598,11 @@ void renderInputScreen() {
     display.setTextSize(1);
     display.setCursor(15, 4);
     display.println(F("=== MENU RESET ==="));
+
     display.setTextSize(2);
     display.setCursor(50, 20);
     display.print(key_sequence);
+
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setTextSize(1);
     display.setCursor(0, 50);
@@ -605,13 +619,16 @@ void renderInputScreen() {
     display.setTextSize(1);
     display.setCursor(15, 4);
     display.println(F("INPUT TOKEN kWh"));
+
     display.setTextSize(2);
     display.setCursor(10, 20);
     display.printf("+%s", input_kwh_str.c_str());
+
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setTextSize(1);
     display.setCursor(0, 50);
-    display.println(F("[#] Simpan  [*] Hapus"));
+    // Tampilan teks petunjuk baru: D untuk Simpan, # untuk titik, * untuk Hapus
+    display.println(F("[D]OK  [#].  [*]Del"));
     display.display();
     return;
   }
@@ -675,10 +692,8 @@ void calculateACMetricsPresisi() {
 
   if (n_samples < 80) return;
 
-  // 1. Estimasi kasar offset DC untuk acuan Schmitt-trigger
   float v_offset_approx = (float)sum_raw_v / n_samples;
 
-  // 2. Deteksi Titik Potong Nol (Zero-Crossing) Bebas Noise dengan Histeresis -25 ADC
   bool armed = false;
   int zc_indices[25];
   int zc_count = 0;
@@ -686,17 +701,16 @@ void calculateACMetricsPresisi() {
   for (int n = 0; n < n_samples; n++) {
     float v_diff = (float)raw_v_arr[n] - v_offset_approx;
     if (v_diff < -25.0f) {
-      armed = true;  // Sinyal benar-benar berada di lembah negatif
+      armed = true;
     }
     if (armed && v_diff >= 0.0f) {
       if (zc_count < 25) {
         zc_indices[zc_count++] = n;
       }
-      armed = false;  // Reset, cegah trigger berulang akibat noise
+      armed = false;
     }
   }
 
-  // Jika tidak ada tegangan AC yang terdeteksi
   if (zc_count < 2) {
     v_rms = 0.0f;
     i_rms = 0.0f;
@@ -706,14 +720,12 @@ void calculateACMetricsPresisi() {
     return;
   }
 
-  // 3. Kunci rentang sampling HANYA pada siklus gelombang penuh
   int start_idx = zc_indices[0];
   int end_idx = zc_indices[zc_count - 1];
   int cycle_samples = end_idx - start_idx;
 
   if (cycle_samples < 40) return;
 
-  // 4. Hitung Offset DC Eksak pada siklus penuh (rata-rata AC murni = 0)
   long sum_v_exact = 0;
   long sum_i_exact = 0;
   for (int n = start_idx; n < end_idx; n++) {
@@ -723,7 +735,6 @@ void calculateACMetricsPresisi() {
   float v_offset = (float)sum_v_exact / cycle_samples;
   float i_offset = (float)sum_i_exact / cycle_samples;
 
-  // 5. Hitung RMS Murni Siklus Utuh
   double sum_v_sq = 0.0, sum_i_sq = 0.0;
   for (int n = start_idx; n < end_idx; n++) {
     float v_inst = (float)raw_v_arr[n] - v_offset;
@@ -739,7 +750,6 @@ void calculateACMetricsPresisi() {
     v_rms = 0.0f;
   }
 
-  // 6. Hitung Daya Nyata Sesuai Sinkronisasi Fasa
   double sum_p_inst = 0.0;
   int valid_p = 0;
 
@@ -846,11 +856,9 @@ void handleMQTT() {
 void publishTelemetry() {
   if (!mqttClient.connected()) return;
 
-  // Ambil waktu lokal dari ESP32
   struct tm timeinfo;
   char time_str[25] = "";
 
-  // Jika NTP sudah sinkron (tahun > 2020), format waktu jadi string
   if (getLocalTime(&timeinfo) && timeinfo.tm_year > (2020 - 1900)) {
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
   }

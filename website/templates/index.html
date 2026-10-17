@@ -847,7 +847,9 @@
                         xaxis: {
                             categories: getDynamicHorizonLabels(),
                             labels: {
-                                style: { colors: '#9E9E9E', fontSize: '10px', fontFamily: 'Inter, sans-serif' },
+                                rotate: -20,
+                                rotateAlways: true,
+                                style: { colors: '#9E9E9E', fontSize: '11px', fontFamily: 'Inter, sans-serif' },
                             },
                             axisBorder: { color: '#2E2E2E' },
                             axisTicks: { color: '#2E2E2E' }
@@ -1063,7 +1065,12 @@
 
                   forecastChart.updateOptions({
                       xaxis: {
-                          categories: getDynamicHorizonLabels(currentTime)
+                          categories: getDynamicHorizonLabels(currentTime),
+                          labels: {
+                              rotate: -20,
+                              rotateAlways: true,
+                              style: { colors: '#9E9E9E', fontSize: '11px', fontFamily: 'Inter, sans-serif' }
+                          }
                       },
                       yaxis: {
                           min: 0,
