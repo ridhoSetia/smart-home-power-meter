@@ -1,9 +1,7 @@
 /*
- * ==================================================================================
+ *==============
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- * REVISI: NOISE-FLOOR COMPENSATION (16x OVERSAMPLING) + SIKLUS ZERO-CROSSING VALID
- * FITUR KEYPAD: [#] = KOMA DESIMAL (.), [D] = ENTER / SIMPAN TOP-UP SALDO
- * ==================================================================================
+ *==============
  */
 
 #include <WiFi.h>
@@ -18,12 +16,12 @@
 #include "SPI.h"
 #include "tinyml_inference.h"
 
-// ================= OLED SSD1306 (I2C: GPIO 21, 22) =================
+// OLED SSD1306 (I2C: GPIO 21, 22)
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// ================= MICRO SD CARD (VSPI: CS=5, MOSI=23, MISO=19, SCK=18) =================
+// MICRO SD CARD (VSPI: CS=5, MOSI=23, MISO=19, SCK=18 
 #define SD_CS_PIN 5
 bool sdCardAvailable = false;
 const char* FILE_SALDO = "/saldo.txt";
@@ -32,7 +30,7 @@ const char* FILE_LOG = "/energy_log.csv";
 const char* FILE_BUFFER = "/buffer_history.dat";
 const char* FILE_BUFF_TMP = "/buffer_history.tmp";
 
-// ================= KEYPAD MATRIX 4x4 (GPIO 13, 12, 14, 26, 27, 25, 33, 32) =================
+// KEYPAD MATRIX 4x4 (GPIO 13, 12, 14, 26, 27, 25, 33, 32)
 const byte ROWS = 4;
 const byte COLS = 4;
 char keys[ROWS][COLS] = {
@@ -46,7 +44,7 @@ byte rowPins[ROWS] = { 13, 12, 14, 26 };
 byte colPins[COLS] = { 27, 25, 33, 32 };
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-// ================= KONFIGURASI WIFI & HIVEMQ =================
+// KONFIGURASI WIFI & HIVEMQ
 const char* WIFI_SSID = "Ridho Ruijie";
 const char* WIFI_PASSWORD = "ridhosetiawanskom24";
 const char* MQTT_BROKER = "broker.hivemq.com";
@@ -61,7 +59,7 @@ String mqttClientId = "ESP32_ELEVATE_" + String((uint32_t)ESP.getEfuseMac(), HEX
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-// ================= PIN SENSOR ADC1 =================
+// PIN SENSOR ADC1
 #define PIN_VOLTAGE 35
 #define PIN_CURRENT 34
 #define SAMPLING_PERIOD_MS 200
@@ -70,7 +68,7 @@ PubSubClient mqttClient(espClient);
 const float V_CAL = 5581.51f;
 const float I_CAL = 111.53f;
 const int PHASE_SAMPLE_SHIFT = -1;
-const float FINE_PHASE_TUNE = 0.20f;
+const float FINE_PHASE_TUNE = 0.00f;
 const float NO_LOAD_CURRENT_THRESHOLD = 0.015f;
 const float NO_LOAD_POWER_THRESHOLD = 0.15f;
 
@@ -80,7 +78,7 @@ float v_rms_stable = 0.0f, i_rms_stable = 0.0f, p_active_stable = 0.0f, p_appare
 int raw_v_arr[MAX_SAMPLES];
 int raw_i_arr[MAX_SAMPLES];
 
-// ================= SALDO & BUFFER PREDIKSI =================
+// SALDO & BUFFER PREDIKSI
 float saldo_token_kwh = 20.0f;
 float last_saved_saldo = 20.0f;
 float current_interval_kwh = 0.0f;
@@ -92,7 +90,7 @@ int buffer_idx = 0;
 float predicted_q[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 bool is_ml_warmed_up = false;
 
-// ================= MODE INPUT & NOTIFIKASI =================
+// MODE INPUT & NOTIFIKASI
 String input_kwh_str = "";
 String key_sequence = "";
 bool is_input_mode = false;
@@ -113,7 +111,7 @@ unsigned long prevOledRefresh = 0;
 unsigned long prevSaldoPeriodicSave = 0;
 const unsigned long INTERVAL_15M = 900000;
 
-// ================= PROTOTIPE FUNGSI =================
+// PROTOTIPE FUNGSI
 void handleKeypad();
 void updateOLED();
 void renderInputScreen();
@@ -132,7 +130,7 @@ void saveBufferToSD();
 bool loadBufferFromSD();
 void wipeAllSDCardFiles();
 
-// ================= SETUP =================
+// SETUP
 void setup() {
   Serial.begin(115200);
 
@@ -175,7 +173,7 @@ void setup() {
   }
 }
 
-// ================= LOOP UTAMA =================
+// LOOP UTAMA
 void loop() {
   unsigned long currentMillis = millis();
 
@@ -288,7 +286,7 @@ void loop() {
   }
 }
 
-// ================= SISTEM PENYIMPANAN MICROSD =================
+// SISTEM PENYIMPANAN MICROSD
 void initSDCard() {
   SPI.begin(18, 19, 23, SD_CS_PIN);
   if (!SD.begin(SD_CS_PIN, SPI, 4000000)) {
@@ -459,7 +457,7 @@ void logTelemetryToSD() {
   }
 }
 
-// ================= LOGIKA KEYPAD (ENTER = D, KOMA/DESIMAL = #) =================
+// LOGIKA KEYPAD (ENTER = D, KOMA/DESIMAL = #)
 void handleKeypad() {
   char key = keypad.getKey();
   if (!key) return;
@@ -663,7 +661,7 @@ void updateOLED() {
   display.display();
 }
 
-// ================= METROLOGI TRUE-RMS DENGAN KOMPENSASI NOISE FLOOR =================
+// METROLOGI TRUE-RMS DENGAN KOMPENSASI NOISE FLOOR
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
@@ -757,7 +755,7 @@ void calculateACMetricsPresisi() {
   double mean_i_sq = sum_i_sq / cycle_samples;
 
   if (mean_i_sq < 100.0) {  // Hanya aktif untuk beban kecil di bawah ~60 Watt
-    const double NOISE_VARIANCE_I = 16.0;
+    const double NOISE_VARIANCE_I = 8.0;
     if (mean_i_sq > NOISE_VARIANCE_I) {
       mean_i_sq -= NOISE_VARIANCE_I;
     } else {
@@ -817,7 +815,7 @@ void calculateACMetricsPresisi() {
   }
 }
 
-// ================= ADAPTASI AWAL TINYML =================
+// ADAPTASI AWAL TINYML
 void warmupTinyMLWithCurrentLoad() {
   float active_kw = (p_active_stable > 0.05f) ? (p_active_stable / 1000.0f) : 0.060f;
   float initial_energy_15m = active_kw * 0.25f;
@@ -833,7 +831,7 @@ void warmupTinyMLWithCurrentLoad() {
   is_ml_warmed_up = true;
 }
 
-// ================= EKSTRAKSI FITUR TINYML =================
+// EKSTRAKSI FITUR TINYML
 void build_features(float* features) {
   features[0] = energy_buffer_15m[buffer_idx];
   features[1] = energy_buffer_15m[(buffer_idx - 1 + BUFFER_SIZE) % BUFFER_SIZE];
@@ -858,7 +856,7 @@ void build_features(float* features) {
   features[7] = cosf(2.0f * PI * hour_dec / 24.0f);
 }
 
-// ================= JARINGAN WIFI & MQTT =================
+// JARINGAN WIFI & MQTT
 void handleWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
   if (millis() - prevWifiRetry >= 5000) {
