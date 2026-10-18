@@ -1,7 +1,9 @@
 /*
- *==============
+ * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
- *==============
+ * REVISI: METROLOGI PRESISI TINGGI (DOUBLE 64-BIT, RIEMANN DELTA-T, ROBUST SAFETY)
+ * FITUR KEYPAD: [#] = KOMA DESIMAL (.), [D] = ENTER / SIMPAN TOP-UP SALDO
+ * ==================================================================================
  */
 
 #include <WiFi.h>
@@ -11,17 +13,18 @@
 #include <Adafruit_SSD1306.h>
 #include <Keypad.h>
 #include <time.h>
+#include <math.h>
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
 #include "tinyml_inference.h"
 
-// OLED SSD1306 (I2C: GPIO 21, 22)
+// ================= OLED SSD1306 (I2C: GPIO 21, 22) =================
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// MICRO SD CARD (VSPI: CS=5, MOSI=23, MISO=19, SCK=18 
+// ================= MICRO SD CARD (VSPI: CS=5, MOSI=23, MISO=19, SCK=18) =================
 #define SD_CS_PIN 5
 bool sdCardAvailable = false;
 const char* FILE_SALDO = "/saldo.txt";
@@ -30,7 +33,7 @@ const char* FILE_LOG = "/energy_log.csv";
 const char* FILE_BUFFER = "/buffer_history.dat";
 const char* FILE_BUFF_TMP = "/buffer_history.tmp";
 
-// KEYPAD MATRIX 4x4 (GPIO 13, 12, 14, 26, 27, 25, 33, 32)
+// ================= KEYPAD MATRIX 4x4 (GPIO 13, 12, 14, 26, 27, 25, 33, 32) =================
 const byte ROWS = 4;
 const byte COLS = 4;
 char keys[ROWS][COLS] = {
@@ -44,7 +47,7 @@ byte rowPins[ROWS] = { 13, 12, 14, 26 };
 byte colPins[COLS] = { 27, 25, 33, 32 };
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-// KONFIGURASI WIFI & HIVEMQ
+// ================= KONFIGURASI WIFI & HIVEMQ =================
 const char* WIFI_SSID = "Ridho Ruijie";
 const char* WIFI_PASSWORD = "ridhosetiawanskom24";
 const char* MQTT_BROKER = "broker.hivemq.com";
@@ -59,7 +62,7 @@ String mqttClientId = "ESP32_ELEVATE_" + String((uint32_t)ESP.getEfuseMac(), HEX
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-// PIN SENSOR ADC1
+// ================= PIN SENSOR ADC1 =================
 #define PIN_VOLTAGE 35
 #define PIN_CURRENT 34
 #define SAMPLING_PERIOD_MS 200
@@ -78,10 +81,11 @@ float v_rms_stable = 0.0f, i_rms_stable = 0.0f, p_active_stable = 0.0f, p_appare
 int raw_v_arr[MAX_SAMPLES];
 int raw_i_arr[MAX_SAMPLES];
 
-// SALDO & BUFFER PREDIKSI
-float saldo_token_kwh = 20.0f;
-float last_saved_saldo = 20.0f;
-float current_interval_kwh = 0.0f;
+// ================= SALDO & BUFFER PREDIKSI =================
+// Menggunakan double (64-bit) untuk mencegah floating-point cancellation pada beban kecil
+double saldo_token_kwh = 20.0;
+double last_saved_saldo = 20.0;
+double current_interval_kwh = 0.0;
 float token_runway_hours = 999.0f;
 
 #define BUFFER_SIZE 96
@@ -90,7 +94,7 @@ int buffer_idx = 0;
 float predicted_q[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 bool is_ml_warmed_up = false;
 
-// MODE INPUT & NOTIFIKASI
+// ================= MODE INPUT & NOTIFIKASI =================
 String input_kwh_str = "";
 String key_sequence = "";
 bool is_input_mode = false;
@@ -111,7 +115,7 @@ unsigned long prevOledRefresh = 0;
 unsigned long prevSaldoPeriodicSave = 0;
 const unsigned long INTERVAL_15M = 900000;
 
-// PROTOTIPE FUNGSI
+// ================= PROTOTIPE FUNGSI =================
 void handleKeypad();
 void updateOLED();
 void renderInputScreen();
@@ -124,13 +128,13 @@ void publishTelemetry();
 void warmupTinyMLWithCurrentLoad();
 void initSDCard();
 bool recoverSDCard();
-void saveSaldoToSD(float saldo);
+void saveSaldoToSD(double saldo);
 void logTelemetryToSD();
 void saveBufferToSD();
 bool loadBufferFromSD();
 void wipeAllSDCardFiles();
 
-// SETUP
+// ================= SETUP =================
 void setup() {
   Serial.begin(115200);
 
@@ -173,7 +177,7 @@ void setup() {
   }
 }
 
-// LOOP UTAMA
+// ================= LOOP UTAMA =================
 void loop() {
   unsigned long currentMillis = millis();
 
@@ -181,8 +185,9 @@ void loop() {
   handleWiFi();
   handleMQTT();
 
-  // 1. Metrologi & Riemann Sum Pemotongan Saldo (Tiap 1 Detik)
+  // 1. Metrologi & Riemann Sum Pemotongan Saldo (Tiap 1 Detik Berbasis Delta-T Nyata)
   if (currentMillis - prevSecTime >= 1000) {
+    double dt_s = (double)(currentMillis - prevSecTime) / 1000.0;
     prevSecTime = currentMillis;
 
     calculateACMetricsPresisi();
@@ -225,13 +230,14 @@ void loop() {
       warmupTinyMLWithCurrentLoad();
     }
 
-    float delta_kwh = p_active_stable / 3600000.0f;
+    // Integrasi energi presisi tinggi (double 64-bit) dengan waktu nyata (dt_s)
+    double delta_kwh = ((double)p_active_stable * dt_s) / 3600000.0;
     saldo_token_kwh -= delta_kwh;
-    if (saldo_token_kwh < 0.0f) saldo_token_kwh = 0.0f;
+    if (saldo_token_kwh < 0.0) saldo_token_kwh = 0.0;
     current_interval_kwh += delta_kwh;
 
-    bool delta_threshold_reached = (abs(last_saved_saldo - saldo_token_kwh) >= 0.05f);
-    bool periodic_save_due = (currentMillis - prevSaldoPeriodicSave >= 300000 && delta_kwh > 0.0f);
+    bool delta_threshold_reached = (fabs(last_saved_saldo - saldo_token_kwh) >= 0.01);
+    bool periodic_save_due = (currentMillis - prevSaldoPeriodicSave >= 300000 && delta_kwh > 0.0);
 
     if (delta_threshold_reached || periodic_save_due) {
       prevSaldoPeriodicSave = currentMillis;
@@ -240,7 +246,7 @@ void loop() {
 
     float avg_kw = (predicted_q[0] > 0.01f) ? (predicted_q[0] / 6.0f) : (p_active_stable / 1000.0f);
     if (avg_kw > 0.005f) {
-      token_runway_hours = saldo_token_kwh / avg_kw;
+      token_runway_hours = (float)(saldo_token_kwh / avg_kw);
     } else {
       token_runway_hours = 999.0f;
     }
@@ -273,8 +279,8 @@ void loop() {
     prevInterval15m = currentMillis;
 
     buffer_idx = (buffer_idx + 1) % BUFFER_SIZE;
-    energy_buffer_15m[buffer_idx] = current_interval_kwh;
-    current_interval_kwh = 0.0f;
+    energy_buffer_15m[buffer_idx] = (float)current_interval_kwh;
+    current_interval_kwh = 0.0;
 
     saveBufferToSD();
 
@@ -286,7 +292,7 @@ void loop() {
   }
 }
 
-// SISTEM PENYIMPANAN MICROSD
+// ================= SISTEM PENYIMPANAN MICROSD =================
 void initSDCard() {
   SPI.begin(18, 19, 23, SD_CS_PIN);
   if (!SD.begin(SD_CS_PIN, SPI, 4000000)) {
@@ -313,9 +319,9 @@ void initSDCard() {
       String content = f.readStringUntil('\n');
       content.trim();
       if (content.length() > 0) {
-        saldo_token_kwh = content.toFloat();
+        saldo_token_kwh = content.toDouble();
         last_saved_saldo = saldo_token_kwh;
-        Serial.printf("[SD] Saldo aktif: %.4f kWh\n", saldo_token_kwh);
+        Serial.printf("[SD] Saldo aktif: %.6f kWh\n", saldo_token_kwh);
       }
       f.close();
     }
@@ -346,7 +352,7 @@ bool recoverSDCard() {
   return false;
 }
 
-void saveSaldoToSD(float saldo) {
+void saveSaldoToSD(double saldo) {
   saldo_token_kwh = saldo;
   last_saved_saldo = saldo;
 
@@ -358,7 +364,7 @@ void saveSaldoToSD(float saldo) {
   }
 
   if (f) {
-    f.printf("%.4f\n", saldo);
+    f.printf("%.6f\n", saldo);
     f.flush();
     f.close();
 
@@ -422,13 +428,13 @@ void wipeAllSDCardFiles() {
   if (SD.exists(FILE_BUFFER)) SD.remove(FILE_BUFFER);
   if (SD.exists(FILE_BUFF_TMP)) SD.remove(FILE_BUFF_TMP);
 
-  saldo_token_kwh = 0.0f;
-  last_saved_saldo = 0.0f;
+  saldo_token_kwh = 0.0;
+  last_saved_saldo = 0.0;
   for (int i = 0; i < BUFFER_SIZE; i++) {
     energy_buffer_15m[i] = 0.0f;
   }
 
-  saveSaldoToSD(0.0f);
+  saveSaldoToSD(0.0);
 
   File logFile = SD.open(FILE_LOG, FILE_WRITE);
   if (logFile) {
@@ -447,7 +453,7 @@ void logTelemetryToSD() {
   }
 
   if (logFile) {
-    logFile.printf("%lu,%.2f,%.3f,%.2f,%.2f,%.2f,%.4f,%.2f,%.3f,%.3f,%.3f,%.3f\n",
+    logFile.printf("%lu,%.2f,%.3f,%.2f,%.2f,%.2f,%.6f,%.2f,%.3f,%.3f,%.3f,%.3f\n",
                    millis() / 1000,
                    v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
                    saldo_token_kwh, token_runway_hours,
@@ -457,7 +463,7 @@ void logTelemetryToSD() {
   }
 }
 
-// LOGIKA KEYPAD (ENTER = D, KOMA/DESIMAL = #)
+// ================= LOGIKA KEYPAD (ENTER = D, KOMA/DESIMAL = #) =================
 void handleKeypad() {
   char key = keypad.getKey();
   if (!key) return;
@@ -504,14 +510,14 @@ void handleKeypad() {
 
   if (key == 'D') {
     if (input_kwh_str.length() > 0) {
-      float added_kwh = input_kwh_str.toFloat();
+      double added_kwh = input_kwh_str.toDouble();
       saveSaldoToSD(saldo_token_kwh + added_kwh);
-      showPopup(F("TOP-UP BERHASIL!"), "+" + String(added_kwh, 2) + " kWh", 1500);
+      showPopup(F("TOP-UP BERHASIL!"), "+" + String((float)added_kwh, 2) + " kWh", 1500);
       input_kwh_str = "";
       key_sequence = "";
       is_input_mode = false;
     } else if (key_sequence == "AB") {
-      saveSaldoToSD(0.0f);
+      saveSaldoToSD(0.0);
       showPopup(F("SALDO RESET"), F("MENJADI 0.00 kWh"), 1500);
       key_sequence = "";
       is_input_mode = false;
@@ -649,7 +655,7 @@ void updateOLED() {
   display.printf("Arus  : %5.3f A", i_rms_stable);
 
   display.setCursor(0, 24);
-  display.printf("Saldo : %5.2f kWh", saldo_token_kwh);
+  display.printf("Saldo : %5.2f kWh", (float)saldo_token_kwh);
 
   display.setCursor(0, 36);
   display.printf("Sisa  : %5.2f Jam", token_runway_hours);
@@ -661,7 +667,7 @@ void updateOLED() {
   display.display();
 }
 
-// METROLOGI TRUE-RMS DENGAN KOMPENSASI NOISE FLOOR
+// ================= METROLOGI TRUE-RMS DENGAN KOMPENSASI NOISE FLOOR =================
 void calculateACMetricsPresisi() {
   unsigned long start_time = millis();
   int n_samples = 0;
@@ -693,7 +699,15 @@ void calculateACMetricsPresisi() {
     delayMicroseconds(180);
   }
 
-  if (n_samples < 100) return;
+  // 1. Proteksi jika sampling gagal / terputus: Nol-kan seluruh variabel metrik
+  if (n_samples < 100) {
+    v_rms = 0.0f;
+    i_rms = 0.0f;
+    p_active = 0.0f;
+    p_apparent = 0.0f;
+    power_factor = 0.0f;
+    return;
+  }
 
   float v_offset_approx = (float)sum_raw_v / n_samples;
 
@@ -731,7 +745,15 @@ void calculateACMetricsPresisi() {
   int end_idx = zc_indices[zc_count - 1];
   int cycle_samples = end_idx - start_idx;
 
-  if (cycle_samples < 70) return;
+  // 2. Proteksi jika siklus tidak mencukupi: Nol-kan metrik agar tidak membekukan beban lama
+  if (cycle_samples < 70) {
+    v_rms = 0.0f;
+    i_rms = 0.0f;
+    p_active = 0.0f;
+    p_apparent = 0.0f;
+    power_factor = 0.0f;
+    return;
+  }
 
   long sum_v_exact = 0, sum_i_exact = 0;
   for (int n = start_idx; n < end_idx; n++) {
@@ -749,13 +771,13 @@ void calculateACMetricsPresisi() {
     sum_i_sq += (double)(i_inst * i_inst);
   }
 
-  // 1. Kompensasi Noise Adaptif (Hanya kurangi noise jika arus sangat kecil < 0.3 A)
+  // 3. Kompensasi Noise Adaptif (Hanya kurangi noise jika arus kecil di bawah ~60 Watt)
   // Pada beban besar seperti teko listrik, jangan kurangi mean_i_sq agar I_RMS tidak menyusut
   double mean_v_sq = sum_v_sq / cycle_samples;
   double mean_i_sq = sum_i_sq / cycle_samples;
 
   if (mean_i_sq < 100.0) {  // Hanya aktif untuk beban kecil di bawah ~60 Watt
-    const double NOISE_VARIANCE_I = 8.0;
+    const double NOISE_VARIANCE_I = 4.0;
     if (mean_i_sq > NOISE_VARIANCE_I) {
       mean_i_sq -= NOISE_VARIANCE_I;
     } else {
@@ -766,16 +788,25 @@ void calculateACMetricsPresisi() {
   float v_calc_raw = (sqrt(mean_v_sq) / 4095.0f) * V_CAL;
   i_rms = (sqrt(mean_i_sq) / 4095.0f) * I_CAL;
 
-  // Glitch filter tegangan
+  // 4. Glitch filter tegangan dengan batas toleransi persisten
+  static int v_glitch_counter = 0;
   if (v_rms_stable > 180.0f && (v_calc_raw > 265.0f || v_calc_raw < 150.0f)) {
-    v_rms = v_rms_stable;
+    v_glitch_counter++;
+    if (v_glitch_counter > 3) {
+      v_rms = v_calc_raw;  // Jika anomali bertahan > 3 detik, terima sebagai kondisi PLN nyata
+      v_glitch_counter = 0;
+    } else {
+      v_rms = v_rms_stable;
+    }
   } else if (v_calc_raw < 50.0f) {
     v_rms = 0.0f;
+    v_glitch_counter = 0;
   } else {
     v_rms = v_calc_raw;
+    v_glitch_counter = 0;
   }
 
-  // 2. Perhitungan Daya Nyata Sesuai Sinkronisasi Fasa
+  // 5. Perhitungan Daya Nyata Sesuai Sinkronisasi Fasa
   double sum_p_inst = 0.0;
   int valid_p = 0;
 
@@ -793,15 +824,19 @@ void calculateACMetricsPresisi() {
 
   p_active = (valid_p > 0) ? ((sum_p_inst / valid_p) / (4095.0f * 4095.0f)) * (V_CAL * I_CAL) : 0.0f;
 
+  // 6. Penanganan jika CT terpasang terbalik (daya aktif negatif diubah menjadi positif)
+  if (p_active < 0.0f) {
+    p_active = fabs(p_active);
+  }
+
   if (i_rms < NO_LOAD_CURRENT_THRESHOLD || p_active < NO_LOAD_POWER_THRESHOLD) {
     i_rms = 0.0f;
     p_active = 0.0f;
   }
-  if (p_active < 0.0f) p_active = 0.0f;
 
   p_apparent = v_rms * i_rms;
 
-  // 3. Batasan Konsistensi Fisika: Daya Semu (S) tidak boleh lebih kecil dari Daya Aktif (P)
+  // 7. Batasan Konsistensi Fisika: Daya Semu (S) tidak boleh lebih kecil dari Daya Aktif (P)
   if (p_active > p_apparent) {
     p_apparent = p_active;  // Kunci agar S minimal sama dengan P (PF tidak pernah > 1.0)
   }
@@ -815,7 +850,7 @@ void calculateACMetricsPresisi() {
   }
 }
 
-// ADAPTASI AWAL TINYML
+// ================= ADAPTASI AWAL TINYML =================
 void warmupTinyMLWithCurrentLoad() {
   float active_kw = (p_active_stable > 0.05f) ? (p_active_stable / 1000.0f) : 0.060f;
   float initial_energy_15m = active_kw * 0.25f;
@@ -831,7 +866,7 @@ void warmupTinyMLWithCurrentLoad() {
   is_ml_warmed_up = true;
 }
 
-// EKSTRAKSI FITUR TINYML
+// ================= EKSTRAKSI FITUR TINYML =================
 void build_features(float* features) {
   features[0] = energy_buffer_15m[buffer_idx];
   features[1] = energy_buffer_15m[(buffer_idx - 1 + BUFFER_SIZE) % BUFFER_SIZE];
@@ -856,7 +891,7 @@ void build_features(float* features) {
   features[7] = cosf(2.0f * PI * hour_dec / 24.0f);
 }
 
-// JARINGAN WIFI & MQTT
+// ================= JARINGAN WIFI & MQTT =================
 void handleWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
   if (millis() - prevWifiRetry >= 5000) {
@@ -894,11 +929,11 @@ void publishTelemetry() {
     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
   }
 
-  char payload[420];
+  char payload[450];
   snprintf(payload, sizeof(payload),
            "{\"timestamp\":\"%s\","
            "\"voltage\":%.2f,\"current\":%.3f,\"power\":%.2f,\"apparent_power\":%.2f,\"pf\":%.2f,"
-           "\"saldo_kwh\":%.4f,\"runway_hours\":%.2f,"
+           "\"saldo_kwh\":%.6f,\"runway_hours\":%.2f,"
            "\"q1\":%.3f,\"q2\":%.3f,\"q3\":%.3f,\"q4\":%.3f}",
            time_str,
            v_rms_stable, i_rms_stable, p_active_stable, p_apparent_stable, power_factor * 100.0f,
