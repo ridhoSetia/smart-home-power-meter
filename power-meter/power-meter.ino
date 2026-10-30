@@ -2,7 +2,7 @@
  * ==================================================================================
  * PROYEK: SMART POWER METER & TINYML PREDICTOR (ELEVATE 2026)
  * REVISI: METROLOGI PRESISI TINGGI (DOUBLE 64-BIT, RIEMANN DELTA-T, ROBUST SAFETY)
- * FITUR KEYPAD: [#] = KOMA DESIMAL (.), [D] = ENTER / SIMPAN TOP-UP SALDO
+ * FITUR KEYPAD: [,] = KOMA DESIMAL (.), [⏎] = ENTER / SIMPAN TOP-UP SALDO
  * ==================================================================================
  */
 
@@ -43,8 +43,8 @@ char keys[ROWS][COLS] = {
   { '*', '0', '#', 'D' }
 };
 
-byte rowPins[ROWS] = { 13, 12, 14, 26 };
-byte colPins[COLS] = { 27, 25, 33, 32 };
+byte rowPins[ROWS] = {13, 12, 14, 27};
+byte colPins[COLS] = {26, 25, 33, 32};
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
 // ================= KONFIGURASI WIFI & HIVEMQ =================
@@ -597,7 +597,7 @@ void renderInputScreen() {
     display.println(F("Hapus seluruh file?"));
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setCursor(0, 50);
-    display.println(F("[D] Ya    [*] Batal"));
+    display.println(F("[⏎] Ya [⌫] Batal"));
     display.display();
     return;
   }
@@ -615,7 +615,7 @@ void renderInputScreen() {
     display.setTextSize(1);
     display.setCursor(0, 50);
     if (key_sequence == "AB") {
-      display.println(F("[D]ClrSaldo [C]HapusSD"));
+      display.println(F("[⏎]ClrSaldo [C]HapusSD"));
     } else {
       display.println(F("[B] Lanjut  [*] Batal"));
     }
@@ -635,7 +635,7 @@ void renderInputScreen() {
     display.drawLine(0, 42, 128, 42, WHITE);
     display.setTextSize(1);
     display.setCursor(0, 50);
-    display.println(F("[D]OK  [#].  [*]Del"));
+    display.println(F("[⏎] [,] [⌫]"));
     display.display();
     return;
   }
