@@ -1,6 +1,8 @@
 # ==============================================================================
 # SMART POWER METER IoT - DOCKER COMPOSE CONFIGURATION
 # ==============================================================================
+name: iot-prediksi-kwh
+
 services:
   # ----------------------------------------------------------------------------
   # Layanan Web Platform (FastAPI + WebSocket + Decision Support System)
