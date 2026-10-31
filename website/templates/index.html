@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smart Power Meter IoT | ELEVATE 2026</title>
+    <title>JAIRU — Smart Power Meter</title>
     <!-- Font: Inter (Sans-Serif) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -123,7 +123,7 @@
               <div class="flex items-center gap-1.5">
                 <span
                   class="font-extrabold text-sm tracking-wider text-[#E0E0E0]"
-                  >IoT</span
+                  >JAIRU</span
                 >
               </div>
               <span class="text-[11px] text-[#9E9E9E] block truncate font-sans"
@@ -201,7 +201,7 @@
         </button>
         <div class="flex items-center gap-2">
           <span class="font-extrabold text-sm tracking-wider text-[#E0E0E0]"
-            >IoT Smart Power Meter</span
+            >JAIRU Smart Power Meter</span
           >
         </div>
       </div>
@@ -576,6 +576,91 @@
           </div>
         </section>
 
+        <!-- BARIS 4c: Toggle Kontrol Relay MQTT -->
+        <section
+          id="relayControlSection"
+          class="bg-[#1E1E1E] rounded-lg border border-[#2E2E2E] overflow-hidden"
+          aria-label="Kontrol Relay via MQTT"
+        >
+          <!-- Header kartu -->
+          <div class="px-4 sm:px-5 py-3 border-b border-[#2E2E2E] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+            <div class="flex items-center gap-2">
+              <i class="bx bx-plug text-amber-400 text-lg flex-shrink-0"></i>
+              <h2 class="text-sm font-bold text-[#E0E0E0] tracking-wide">Kontrol Relay</h2>
+              <span class="text-[10px] px-1.5 py-0.5 rounded border border-[#2E2E2E] text-[#9E9E9E] flex-shrink-0">MQTT Publisher</span>
+            </div>
+            <!-- Topic: truncate supaya tidak overflow di layar sempit -->
+            <div class="text-[10px] text-[#9E9E9E] font-mono truncate">
+              <span class="text-[#5E5E5E]">topic:</span> jairu/powermeter/relay/control
+            </div>
+          </div>
+
+          <!-- Body -->
+          <div class="p-4 sm:p-5">
+            <!-- Grid 2 kolom mulai ≥400px, di bawahnya stack vertikal -->
+            <div class="grid grid-cols-1 min-[400px]:grid-cols-2 gap-4 items-center">
+
+              <!-- Kiri: Indikator status -->
+              <div class="flex items-center gap-3">
+                <div
+                  id="relayStatusDot"
+                  class="w-3.5 h-3.5 rounded-full bg-[#2E2E2E] border border-[#3E3E3E] flex-shrink-0 transition-all duration-300"
+                ></div>
+                <div class="min-w-0">
+                  <div class="text-xs text-[#9E9E9E]">Status Relay</div>
+                  <div id="relayStatusText" class="text-sm font-bold text-[#9E9E9E] truncate">Tidak diketahui</div>
+                </div>
+              </div>
+
+              <!-- Kanan: Toggle + tombol ON/OFF sejajar horizontal -->
+              <div class="flex items-center gap-3 min-[400px]:justify-end">
+                <!-- Toggle switch -->
+                <button
+                  id="relayToggleBtn"
+                  type="button"
+                  onclick="toggleRelay()"
+                  class="relative inline-flex items-center h-8 w-16 rounded-full border-2 border-[#2E2E2E] bg-[#121212] transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/50 cursor-pointer flex-shrink-0"
+                  aria-label="Toggle Relay"
+                  aria-pressed="false"
+                >
+                  <span
+                    id="relayThumb"
+                    class="inline-block w-6 h-6 rounded-full bg-[#3E3E3E] shadow transform translate-x-0.5 transition-transform duration-300"
+                  ></span>
+                </button>
+
+                <!-- Tombol ON & OFF sejajar -->
+                <div class="flex gap-1.5">
+                  <button
+                    id="relayOnBtn"
+                    type="button"
+                    onclick="setRelay('on')"
+                    class="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 transition disabled:opacity-50"
+                  >
+                    <i class="bx bx-power-off"></i><span>ON</span>
+                  </button>
+                  <button
+                    id="relayOffBtn"
+                    type="button"
+                    onclick="setRelay('off')"
+                    class="px-3 py-1.5 rounded-md bg-rose-700 hover:bg-rose-600 text-white text-xs font-semibold flex items-center gap-1 transition disabled:opacity-50"
+                  >
+                    <i class="bx bx-power-off"></i><span>OFF</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Feedback: baris terpisah, tinggi tetap, tidak geser elemen di atas -->
+            <div class="mt-2 h-4">
+              <span
+                id="relayFeedback"
+                class="text-xs italic transition-opacity duration-500 opacity-0"
+              ></span>
+            </div>
+          </div>
+        </section>
+
         <!-- BARIS 5: ApexCharts Real-Time (Area) & Proyeksi TinyML 24 Jam (BAR CHART) -->
         <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <!-- Live Chart Watt vs VA: APEXCHARTS TIPE AREA -->
@@ -654,7 +739,7 @@
       <footer
         class="mt-8 border-t border-[#2E2E2E] bg-[#181818] py-3.5 px-4 text-center text-xs text-[#9E9E9E]"
       >
-        <span>Smart Power Meter</span>
+        <span>JAIRU Smart Power Meter</span>
       </footer>
     </div>
 
@@ -1060,8 +1145,8 @@
               // B. Jika Menggunakan ApexCharts
               else if (typeof ApexCharts !== 'undefined' && forecastChart) {
                   const maxVal = Math.max(...qData);
-                  // Ambil timestamp dari payload data jika ada, atau gunakan waktu sekarang
-                  const currentTime = data.timestamp ? new Date(data.timestamp.replace(' ', 'T')) : new Date();
+                  // Ambil timestamp dari payload ESP32 (UTC+8/WITA), atau gunakan waktu lokal browser
+                  const currentTime = data.timestamp ? new Date(data.timestamp.replace(' ', 'T') + '+08:00') : new Date();
 
                   forecastChart.updateOptions({
                       xaxis: {
@@ -1094,6 +1179,15 @@
               }
           } catch (errForecast) {
               console.error("[UI] Error updating Forecast Chart:", errForecast);
+          }
+
+          // 4. SINKRONISASI STATUS RELAY dari paket WebSocket
+          try {
+              if (typeof data.relay_on !== 'undefined' && typeof window._relayApplyFromWS === 'function') {
+                  window._relayApplyFromWS(data.relay_on);
+              }
+          } catch (errRelay) {
+              console.error("[UI] Error syncing relay state:", errRelay);
           }
       }
     </script>
@@ -1136,7 +1230,18 @@
           }
           const gen = document.getElementById("aiGeneratedAt");
           if (gen)
-            gen.textContent = (adv.generated_at || "").split(" ")[1] || "—";
+            gen.textContent = adv.generated_at
+              ? (() => {
+                  // generated_at format: "YYYY-MM-DD HH:MM:SS" (server UTC+8/WIB)
+                  const parts = adv.generated_at.split(" ");
+                  if (parts.length === 2) {
+                    const [tgl, jam] = parts;
+                    const [y, m, d] = tgl.split("-");
+                    return `${d}/${m}/${y} ${jam} WIB`;
+                  }
+                  return adv.generated_at;
+                })()
+              : "—";
 
           const note =
             adv.source !== "llm"
@@ -1197,6 +1302,99 @@
 
         pollAdvice();
         setInterval(pollAdvice, 10000);
+      })();
+    </script>
+    <!-- [Relay] Logika Kontrol Relay via MQTT REST API -->
+    <script>
+      (function () {
+        // State relay lokal (disinkronkan dari WebSocket & response API)
+        let _relayOn = false;
+        let _relayBusy = false;
+
+        function applyRelayUI(isOn) {
+          _relayOn = isOn;
+          const dot   = document.getElementById('relayStatusDot');
+          const txt   = document.getElementById('relayStatusText');
+          const btn   = document.getElementById('relayToggleBtn');
+          const thumb = document.getElementById('relayThumb');
+
+          if (dot) {
+            dot.className = isOn
+              ? 'w-3.5 h-3.5 rounded-full bg-emerald-400 border border-emerald-500 flex-shrink-0 transition-all duration-300 shadow-[0_0_6px_rgba(52,211,153,0.7)]'
+              : 'w-3.5 h-3.5 rounded-full bg-rose-500 border border-rose-600 flex-shrink-0 transition-all duration-300';
+          }
+          if (txt) {
+            txt.textContent = isOn ? 'MENYALA (ON)' : 'MATI (OFF)';
+            txt.className = isOn
+              ? 'text-sm font-bold text-emerald-400'
+              : 'text-sm font-bold text-rose-400';
+          }
+          if (btn) {
+            btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+            btn.className = isOn
+              ? 'relative inline-flex items-center h-8 w-16 rounded-full border-2 border-emerald-500/60 bg-emerald-500/20 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-emerald-400/50 cursor-pointer'
+              : 'relative inline-flex items-center h-8 w-16 rounded-full border-2 border-[#2E2E2E] bg-[#121212] transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/50 cursor-pointer';
+          }
+          if (thumb) {
+            thumb.className = isOn
+              ? 'inline-block w-6 h-6 rounded-full bg-emerald-400 shadow transform translate-x-9 transition-transform duration-300'
+              : 'inline-block w-6 h-6 rounded-full bg-[#3E3E3E] shadow transform translate-x-0.5 transition-transform duration-300';
+          }
+        }
+
+        function showRelayFeedback(msg, isError) {
+          const fb = document.getElementById('relayFeedback');
+          if (!fb) return;
+          fb.textContent = msg;
+          fb.className = 'text-xs italic transition-opacity duration-500 ' +
+            (isError ? 'text-rose-400' : 'text-emerald-400');
+          // Fade in
+          fb.style.opacity = '0';
+          requestAnimationFrame(() => { fb.style.opacity = '1'; });
+          // Fade out setelah 2.5 detik
+          clearTimeout(fb._timer);
+          fb._timer = setTimeout(() => {
+            fb.style.opacity = '0';
+          }, 2500);
+        }
+
+        async function _doSetRelay(state) {
+          if (_relayBusy) return;
+          _relayBusy = true;
+          const newState = (state === 'on');
+          applyRelayUI(newState); // Optimistic UI
+          try {
+            const res = await fetch(`/api/relay/${state}`, { method: 'POST' });
+            const json = await res.json();
+            if (json.status === 'success') {
+              applyRelayUI(json.relay_on);
+              showRelayFeedback(`Perintah ${json.published} terkirim`, false);
+            } else {
+              applyRelayUI(!newState); // Rollback
+              showRelayFeedback('Gagal mengirim perintah', true);
+            }
+          } catch (e) {
+            applyRelayUI(!newState); // Rollback
+            showRelayFeedback('Koneksi gagal', true);
+          } finally {
+            _relayBusy = false;
+          }
+        }
+
+        // Expose ke onclick handler
+        window.toggleRelay = function () { _doSetRelay(_relayOn ? 'off' : 'on'); };
+        window.setRelay = function (state) { _doSetRelay(state); };
+
+        // Sinkronisasi status relay dari WebSocket (field relay_on dari server)
+        const _origUpdateUI = typeof window.updateDashboardUI === 'function'
+          ? window.updateDashboardUI : null;
+        window._relayApplyFromWS = function(isOn) { applyRelayUI(isOn); };
+
+        // Ambil status awal dari API
+        fetch('/api/relay')
+          .then(r => r.json())
+          .then(j => { if (j.status === 'success') applyRelayUI(j.relay_on); })
+          .catch(() => {});
       })();
     </script>
   </body>

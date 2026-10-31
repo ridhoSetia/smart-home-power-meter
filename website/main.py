@@ -237,6 +237,9 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# Status relay terakhir yang diketahui (dari MQTT publish atau perintah user)
+relay_state: bool = False
+
 # Buffer telemetri real-time terakhir (tanpa field dss)
 latest_telemetry: Dict[str, Any] = {
     "voltage": 220.0,
@@ -264,7 +267,8 @@ advisor = LLMAdvisor(KONTRAK_DAYA_VA, TARIF_PER_KWH)
 # --------------------------------------------------------------------------
 MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
-MQTT_TOPIC = os.getenv("MQTT_TOPIC", "elevate2026/powermeter/telemetry")
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", "jairu/powermeter/telemetry")
+MQTT_RELAY_TOPIC = os.getenv("MQTT_RELAY_TOPIC", "jairu/powermeter/relay/control")
 
 
 def build_packet(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -274,6 +278,7 @@ def build_packet(record: Dict[str, Any]) -> Dict[str, Any]:
     packet["kontrak_daya_va"] = KONTRAK_DAYA_VA
     packet["tarif_per_kwh"] = TARIF_PER_KWH
     packet["device_ready"] = data_received
+    packet["relay_on"] = relay_state
     try:
         ts = datetime.strptime(record["timestamp"], "%Y-%m-%d %H:%M:%S")
         packet["age_s"] = round(max(0.0, (datetime.now() - ts).total_seconds()), 1)
@@ -380,7 +385,7 @@ async def lifespan(app: FastAPI):
     mqtt_client.disconnect()
 
 
-app = FastAPI(title="Smart Power Meter IoT Dashboard - ELEVATE 2026", lifespan=lifespan)
+app = FastAPI(title="JAIRU Smart Power Meter Dashboard", lifespan=lifespan)
 
 
 # --------------------------------------------------------------------------
@@ -553,3 +558,32 @@ async def request_ai_advisory():
         return {"status": "waiting", "message": "Belum ada telemetri dari perangkat; saran AI belum bisa dibuat."}
     dss = evaluate_dss(latest_telemetry)
     return {"status": "success", "data": await advisor.advise(latest_telemetry, dss)}
+
+
+# --------------------------------------------------------------------------
+# Endpoint Kontrol Relay MQTT
+# --------------------------------------------------------------------------
+@app.get("/api/relay")
+async def get_relay_state():
+    """Kembalikan status relay terakhir."""
+    return {"status": "success", "relay_on": relay_state}
+
+
+@app.post("/api/relay/{state}")
+async def set_relay(state: str):
+    """Publish perintah ON / OFF ke topic relay MQTT.
+
+    state: 'on' atau 'off'
+    """
+    global relay_state
+    state = state.strip().lower()
+    if state not in ("on", "off"):
+        raise HTTPException(status_code=400, detail="State harus 'on' atau 'off'")
+
+    payload = "ON" if state == "on" else "OFF"
+    try:
+        mqtt_client.publish(MQTT_RELAY_TOPIC, payload, qos=1)
+        relay_state = (state == "on")
+        return {"status": "success", "relay_on": relay_state, "published": payload, "topic": MQTT_RELAY_TOPIC}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal publish MQTT: {e}")
