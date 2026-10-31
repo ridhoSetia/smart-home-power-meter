@@ -234,7 +234,10 @@ class WAHAClient:
 
     def _fetch_json(self, req: urllib.request.Request) -> Any:
         with urllib.request.urlopen(req, timeout=12) as response:
-            return json.loads(response.read().decode("utf-8"))
+            body = response.read().decode("utf-8").strip()
+            if not body:
+                return None
+            return json.loads(body)
 
     def _fetch_raw(self, req: urllib.request.Request) -> Tuple[bytes, str]:
         with urllib.request.urlopen(req, timeout=12) as response:
