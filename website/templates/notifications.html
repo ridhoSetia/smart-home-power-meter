@@ -452,151 +452,184 @@
             <!-- Grid Pengaturan Alert & Toggle -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Alert 1: Beban Kritis 85% -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bx-error text-rose-400 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Beban Kritis (&ge; 85% Kapasitas)</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Kirim alert saat daya semu mencapai 85% batas kontrak. Menggunakan <em>hysteresis lock</em> (baru reset jika turun ke &lt; 70%) untuk mencegah spam.
-                  </p>
-                  <div class="pt-2 flex items-center gap-2">
-                    <span class="text-[11px] text-[#9E9E9E]">Batas Kontrak:</span>
-                    <input
-                      id="inputThresholdVa"
-                      type="number"
-                      step="50"
-                      min="450"
-                      max="11000"
-                      class="w-24 bg-[#121212] border border-[#2E2E2E] rounded px-2 py-1 text-xs text-[#E0E0E0] font-mono"
-                      value="1300"
-                    />
-                    <span class="text-[11px] text-[#9E9E9E]">VA</span>
-                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleOverload" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleOverload" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Kirim alert saat daya semu mencapai 85% batas kontrak. Menggunakan <em>hysteresis lock</em> (baru reset jika turun ke &lt; 70%) untuk mencegah spam.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center gap-2 pt-1">
+                  <span class="text-[11px] text-[#9E9E9E]">Batas Kontrak:</span>
+                  <input
+                    id="inputThresholdVa"
+                    type="number"
+                    step="50"
+                    min="450"
+                    max="11000"
+                    class="w-20 bg-[#121212] border border-[#2E2E2E] rounded px-2 py-1 text-xs text-[#E0E0E0] font-mono"
+                    value="1300"
+                  />
+                  <span class="text-[11px] text-[#9E9E9E]">VA</span>
+                  <button type="button" onclick="simulateAlert('OVERLOAD', this)" class="ml-auto inline-flex items-center gap-1.5 rounded border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-rose-400 transition hover:bg-rose-500/20">
+                    <i class="bx bx-send"></i> Simulasikan Notifikasi
+                  </button>
+                </div>
               </div>
 
               <!-- Alert 2: Prediksi Runway Menipis (< 12 Jam) -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bx-time text-amber-400 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Peringatan Kuota Runway (&lt; 12 Jam)</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Evaluasi proyeksi TinyML saat sisa waktu ketahanan saldo menyentuh milestone peringatan (&lt; 12 jam). Dikirim tepat 1x per siklus pengurasan.
-                  </p>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleRunway12h" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleRunway12h" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Evaluasi proyeksi TinyML saat sisa waktu ketahanan saldo menyentuh milestone peringatan (&lt; 12 jam). Dikirim tepat 1x per siklus pengurasan.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span class="text-[10px] text-[#6B7280]">Uji kirim via WhatsApp</span>
+                  <button type="button" onclick="simulateAlert('RUNWAY_12H', this)" class="inline-flex items-center gap-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/20">
+                    <i class="bx bx-send"></i> Simulasikan Notifikasi
+                  </button>
+                </div>
               </div>
 
               <!-- Alert 3: Prediksi Runway Darurat (< 6 Jam) -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bxs-alarm-exclamation text-rose-500 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Darurat Kuota Runway (&lt; 6 Jam)</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Notifikasi intensif saat estimasi saldo tinggal kurang dari 6 jam untuk mencegah listrik padam saat malam/fajar.
-                  </p>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleRunway6h" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleRunway6h" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Notifikasi intensif saat estimasi saldo tinggal kurang dari 6 jam untuk mencegah listrik padam saat malam/fajar.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span class="text-[10px] text-[#6B7280]">Uji kirim via WhatsApp</span>
+                  <button type="button" onclick="simulateAlert('RUNWAY_6H', this)" class="inline-flex items-center gap-1.5 rounded border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-rose-400 transition hover:bg-rose-500/20">
+                    <i class="bx bx-send"></i> Simulasikan Notifikasi
+                  </button>
+                </div>
               </div>
 
               <!-- Alert 3b: Risiko Padam Sebelum Fajar (Runway Extender) -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bx-moon text-indigo-400 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Risiko Padam Sebelum Fajar (Runway Extender)</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Peringatan dini malam hari (pukul 21:00&ndash;05:00) jika saldo token lebih kecil dari proyeksi TinyML Q1 (00:00&ndash;06:00). Memberikan saran batas aman daya (Watt) agar listrik bertahan hingga pukul 07:00 pagi.
-                  </p>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleDawnRisk" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleDawnRisk" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Peringatan dini malam hari (pukul 21:00&ndash;05:00) jika saldo token lebih kecil dari proyeksi TinyML Q1 (00:00&ndash;06:00). Memberikan saran batas aman daya (Watt) agar listrik bertahan hingga pukul 07:00 pagi.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span class="text-[10px] text-[#6B7280]">Uji kirim via WhatsApp</span>
+                  <button type="button" onclick="simulateAlert('DAWN_RISK', this)" class="inline-flex items-center gap-1.5 rounded border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-400 transition hover:bg-indigo-500/20">
+                    <i class="bx bx-send"></i> Simulasikan Notifikasi
+                  </button>
+                </div>
               </div>
 
               <!-- Alert 4: Saldo Habis & Relay Cut-Off -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bx-power-off text-rose-400 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Saldo Habis &amp; Relay Cut-Off</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Kirim alert instan saat saldo mencapai 0.00 kWh dan relay utama GPIO 4 secara otomatis memutus aliran beban listrik.
-                  </p>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleCutoff" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3B82F6]"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleCutoff" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3B82F6]"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Kirim alert instan saat saldo mencapai 0.00 kWh dan relay utama GPIO 4 secara otomatis memutus aliran beban listrik.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span class="text-[10px] text-[#6B7280]">Uji kirim via WhatsApp</span>
+                  <button type="button" onclick="simulateAlert('CUTOFF', this)" class="inline-flex items-center gap-1.5 rounded border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-rose-400 transition hover:bg-rose-500/20">
+                    <i class="bx bx-send"></i> Simulasikan Notifikasi
+                  </button>
+                </div>
               </div>
 
               <!-- Alert 5: Konfirmasi Top-Up Token -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bx-check-circle text-emerald-400 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Konfirmasi Top-Up Token</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Deteksi otomatis ketika saldo token bertambah signifikan (&ge; 0.5 kWh) pasca pengisian keypad fisik ESP32. Otomatis mereset semua status kunci.
-                  </p>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleTopup" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleTopup" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Deteksi otomatis ketika saldo token bertambah signifikan (&ge; 0.5 kWh) pasca pengisian keypad fisik ESP32. Otomatis mereset semua status kunci.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span class="text-[10px] text-[#6B7280]">Uji kirim via WhatsApp</span>
+                  <button type="button" onclick="simulateAlert('TOPUP', this)" class="inline-flex items-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-400 transition hover:bg-emerald-500/20">
+                    <i class="bx bx-send"></i> Simulasikan Notifikasi
+                  </button>
+                </div>
               </div>
 
               <!-- Alert 6: Laporan Ringkasan Energi Harian (AI Daily Digest) -->
-              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-2 min-w-0">
                     <i class="bx bx-bot text-purple-400 text-lg"></i>
                     <span class="text-xs font-bold text-[#E0E0E0]">Laporan Ringkasan Cerdas AI (Daily Digest)</span>
                   </div>
-                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
-                    Scheduler harian otomatis yang mengagregasi 24 jam konsumsi, evaluasi power factor, proyeksi TinyML Q1-Q4, dan narasi rekomendasi efisiensi dari LLM.
-                  </p>
-                  <div class="pt-2 flex flex-wrap items-center gap-2">
-                    <span class="text-[11px] text-[#9E9E9E]">Waktu Kirim:</span>
-                    <input
-                      id="inputDigestTime"
-                      type="time"
-                      class="bg-[#121212] border border-[#2E2E2E] rounded px-2 py-1 text-xs text-[#E0E0E0] font-mono"
-                      value="20:00"
-                    />
-                    <button
-                      type="button"
-                      onclick="triggerManualDigest()"
-                      class="px-2 py-1 rounded bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-[10px] text-[#D4D4D4] transition"
-                    >
-                      Kirim Laporan Sekarang
-                    </button>
-                  </div>
+                  <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input id="toggleDailyDigest" type="checkbox" class="sr-only peer" checked />
+                    <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
-                  <input id="toggleDailyDigest" type="checkbox" class="sr-only peer" checked />
-                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                </label>
+                <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                  Scheduler harian otomatis yang mengagregasi 24 jam konsumsi, evaluasi power factor, proyeksi TinyML Q1-Q4, dan narasi rekomendasi efisiensi dari LLM.
+                </p>
+                <div class="mt-auto flex flex-wrap items-center gap-2 pt-1">
+                  <span class="text-[11px] text-[#9E9E9E]">Waktu Kirim:</span>
+                  <input
+                    id="inputDigestTime"
+                    type="time"
+                    class="bg-[#121212] border border-[#2E2E2E] rounded px-2 py-1 text-xs text-[#E0E0E0] font-mono"
+                    value="20:00"
+                  />
+                  <button
+                    type="button"
+                    onclick="triggerManualDigest()"
+                    class="ml-auto px-2.5 py-1.5 rounded bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-[10px] text-[#D4D4D4] transition"
+                  >
+                    Kirim Laporan Sekarang
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1134,6 +1167,39 @@
         } finally {
           btn.disabled = false;
           btn.innerHTML = orig;
+        }
+      }
+
+      async function simulateAlert(category, button) {
+        const phone = document.getElementById("inputPhone").value.trim();
+        if (!phone) {
+          showToast("Silakan isi nomor WhatsApp penerima terlebih dahulu.", "error");
+          document.getElementById("inputPhone").focus();
+          return;
+        }
+
+        const originalContent = button.innerHTML;
+        button.disabled = true;
+        button.classList.add("opacity-60", "cursor-not-allowed");
+        button.innerHTML = "<i class='bx bx-loader-alt animate-spin'></i> Mengirim...";
+        try {
+          const response = await fetch(`/api/notifications/simulate/${category}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipient_phone: phone }),
+          });
+          const result = await response.json();
+          if (!response.ok || result.status !== "success") {
+            throw new Error(result.detail || result.message || "Gagal mengirim simulasi");
+          }
+          showToast(result.message);
+          loadNotificationLogs();
+        } catch (error) {
+          showToast(error.message || "Gagal mengirim simulasi", "error");
+        } finally {
+          button.disabled = false;
+          button.classList.remove("opacity-60", "cursor-not-allowed");
+          button.innerHTML = originalContent;
         }
       }
 

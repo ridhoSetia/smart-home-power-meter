@@ -41,6 +41,49 @@ def clean_phone_number(phone: str) -> str:
     return digits
 
 
+SIMULATION_MESSAGES = {
+    "OVERLOAD": (
+        "⚠️ *SIMULASI: BEBAN LISTRIK KRITIS*\n\n"
+        "Daya saat ini: *1.150 VA* (88.5% dari batas 1.300 VA)\n"
+        "Daya Aktif: *1.020 Watt*\n\n"
+        "Segera kurangi beban sekunder (AC, pompa air, setrika) untuk mencegah MCB trip!"
+    ),
+    "RUNWAY_12H": (
+        "⚡ *SIMULASI: SISA KUOTA LISTRIK MENIPIS*\n\n"
+        "Sisa waktu pemakaian listrik diproyeksikan tinggal: *11.5 Jam*\n"
+        "Sisa Saldo: *2.40 kWh*\n\n"
+        "Pertimbangkan untuk melakukan isi ulang token prabayar Anda."
+    ),
+    "RUNWAY_6H": (
+        "🚨 *SIMULASI: KUOTA LISTRIK SEGERA HABIS*\n\n"
+        "Perkiraan listrik bertahan: *5.5 Jam* (< 6 Jam tersisa)\n"
+        "Sisa Saldo: *1.10 kWh*\n\n"
+        "Segera lakukan pengisian token listrik agar listrik tidak padam tiba-tiba!"
+    ),
+    "DAWN_RISK": (
+        "🌙 *SIMULASI: RISIKO LISTRIK PADAM SEBELUM FAJAR*\n\n"
+        "Sisa kuota: *0.80 kWh* diproyeksikan habis sebelum pukul 07:00 pagi.\n"
+        "Kebutuhan estimasi kuadran dini hari (Q1): *1.20 kWh*.\n"
+        "Daya aktif saat ini: *210 Watt*.\n\n"
+        "💡 *Saran Tindakan:*\n"
+        "Batasi total pemakaian beban di bawah *100 Watt* agar listrik bertahan hingga pagi!"
+    ),
+    "CUTOFF": (
+        "⛔ *SIMULASI: LISTRIK PADAM - SALDO TOKEN HABIS*\n\n"
+        "Saldo token listrik Anda telah *0.00 kWh*.\n"
+        "Relay utama JAIRU telah memutus beban listrik untuk pengamanan.\n\n"
+        "Silakan isi token via keypad fisik ESP32 untuk menyalakan kembali daya listrik."
+    ),
+    "TOPUP": (
+        "✅ *SIMULASI: TOP-UP TOKEN BERHASIL DITERIMA*\n\n"
+        "Penambahan Kuota: *+6.93 kWh*\n"
+        "Total Saldo Aktif: *8.25 kWh*\n"
+        "Estimasi Runway Baru: *32.4 Jam*\n\n"
+        "Terima kasih, sistem kembali memantau pemakaian listrik rumah Anda."
+    ),
+}
+
+
 # --------------------------------------------------------------------------
 # 1. Klien REST API WAHA
 # --------------------------------------------------------------------------
@@ -377,6 +420,197 @@ class WhatsAppAlertEngine:
         else:
             print(f"[WA] Gagal mengirim alert [{category}]: {detail}")
         return ok
+
+    # ----------------------------------------------------------------------
+    # Simulasi Notifikasi Berbasis Data Telemetri Terakhir
+    # ----------------------------------------------------------------------
+    def _get_simulation_snapshot(self, category: str, threshold_va: float) -> Dict[str, Any]:
+        """Ambil telemetri terakhir dan sampel data historis yang memenuhi aturan."""
+        conn = self._get_db()
+        try:
+            base_cols = """
+                timestamp, voltage, current, power, apparent_power, pf,
+                saldo_kwh, runway_hours, q1, q2, q3, q4
+            """
+            latest = conn.execute(
+                f"SELECT {base_cols} FROM telemetry_history ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if not latest:
+                return {}
+
+            sample = None
+            if category == "OVERLOAD":
+                sample = conn.execute(
+                    f"SELECT {base_cols} FROM telemetry_history "
+                    "WHERE apparent_power >= ? ORDER BY id DESC LIMIT 1",
+                    (0.85 * threshold_va,)
+                ).fetchone()
+            elif category == "RUNWAY_12H":
+                sample = conn.execute(
+                    f"SELECT {base_cols} FROM telemetry_history "
+                    "WHERE saldo_kwh > 0.001 AND runway_hours < 12.0 "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            elif category == "RUNWAY_6H":
+                sample = conn.execute(
+                    f"SELECT {base_cols} FROM telemetry_history "
+                    "WHERE saldo_kwh > 0.001 AND runway_hours < 6.0 "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            elif category == "DAWN_RISK":
+                sample = conn.execute(
+                    f"SELECT {base_cols} FROM telemetry_history "
+                    "WHERE saldo_kwh > 0.001 AND q1 > 0 AND saldo_kwh < q1 "
+                    "AND (CAST(strftime('%H', timestamp) AS INTEGER) >= 21 "
+                    "OR CAST(strftime('%H', timestamp) AS INTEGER) <= 5) "
+                    "ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            elif category == "CUTOFF":
+                sample = conn.execute(
+                    f"SELECT {base_cols} FROM telemetry_history "
+                    "WHERE saldo_kwh <= 0.0001 ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            elif category == "TOPUP":
+                sample = conn.execute("""
+                    SELECT * FROM (
+                        SELECT id, timestamp, saldo_kwh, runway_hours,
+                               saldo_kwh - LAG(saldo_kwh) OVER (ORDER BY id) AS delta
+                        FROM telemetry_history
+                    )
+                    WHERE delta >= 0.5
+                    ORDER BY id DESC
+                    LIMIT 1
+                """).fetchone()
+
+            return {
+                "latest": dict(latest),
+                "sample": dict(sample) if sample else None,
+            }
+        finally:
+            conn.close()
+
+    def build_simulation_message(self, category: str) -> Optional[str]:
+        """Susun pesan simulasi aturan alert memakai data telemetri yang relevan."""
+        category = (category or "").upper()
+        config = self.get_config()
+        threshold_va = float(config.get("overload_threshold_va") or 1300.0)
+        snapshot = self._get_simulation_snapshot(category, threshold_va)
+        if not snapshot:
+            return SIMULATION_MESSAGES.get(category)
+
+        latest = snapshot["latest"]
+        sample = snapshot.get("sample")
+        row = sample or latest
+        ts = row.get("timestamp") or "-"
+        s_va = float(row.get("apparent_power") or 0.0)
+        p_watt = float(row.get("power") or 0.0)
+        saldo = float(row.get("saldo_kwh") or 0.0)
+        runway = float(row.get("runway_hours") or 0.0)
+        q1 = float(row.get("q1") or 0.0)
+        data_label = "Data pemicu" if sample else "Data terakhir"
+        fallback_note = (
+            ""
+            if sample
+            else "\n\nCatatan: data terakhir belum memenuhi ambang aturan ini; simulasi menampilkan nilai telemetri terkini."
+        )
+
+        if category == "OVERLOAD":
+            load_pct = (s_va / threshold_va) * 100.0 if threshold_va > 0 else 0.0
+            return (
+                "🧪 *SIMULASI: BEBAN LISTRIK KRITIS*\n"
+                f"📅 {data_label}: *{ts}*\n\n"
+                f"Daya saat ini: *{s_va:.0f} VA* ({load_pct:.1f}% dari batas {threshold_va:.0f} VA)\n"
+                f"Daya Aktif: *{p_watt:.0f} Watt*\n"
+                f"Ambang peringatan: *{0.85 * threshold_va:.0f} VA* (85% kapasitas)\n\n"
+                "Segera kurangi beban sekunder (AC, pompa air, setrika) untuk mencegah MCB trip!"
+                f"{fallback_note}"
+            )
+
+        if category == "RUNWAY_12H":
+            runway_line = (
+                f"Sisa waktu pemakaian listrik diproyeksikan tinggal: *{runway:.1f} Jam*\n"
+                if sample
+                else f"Sisa waktu pemakaian listrik saat ini: *{runway:.1f} Jam* (ambang pemicu < 12 Jam)\n"
+            )
+            return (
+                "🧪 *SIMULASI: SISA KUOTA LISTRIK MENIPIS*\n"
+                f"📅 {data_label}: *{ts}*\n\n"
+                f"{runway_line}"
+                f"Sisa Saldo: *{saldo:.2f} kWh*\n\n"
+                "Pertimbangkan untuk melakukan isi ulang token prabayar Anda."
+                f"{fallback_note}"
+            )
+
+        if category == "RUNWAY_6H":
+            runway_caption = "(< 6 Jam tersisa)" if sample else "(ambang pemicu < 6 Jam)"
+            return (
+                "🧪 *SIMULASI: KUOTA LISTRIK SEGERA HABIS*\n"
+                f"📅 {data_label}: *{ts}*\n\n"
+                f"Perkiraan listrik bertahan: *{runway:.1f} Jam* {runway_caption}\n"
+                f"Sisa Saldo: *{saldo:.2f} kWh*\n\n"
+                "Segera lakukan pengisian token listrik agar listrik tidak padam tiba-tiba!"
+                f"{fallback_note}"
+            )
+
+        if category == "DAWN_RISK":
+            try:
+                event_hour = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").hour
+            except (TypeError, ValueError):
+                event_hour = datetime.now().hour
+            hours_left = (7 - event_hour) if event_hour <= 5 else (7 + 24 - event_hour)
+            safe_cap = (saldo * 1000.0) / max(1.0, hours_left)
+            quota_line = (
+                f"Sisa kuota: *{saldo:.2f} kWh* diproyeksikan habis sebelum pukul 07:00 pagi.\n"
+                if sample
+                else f"Sisa kuota saat ini: *{saldo:.2f} kWh* (ambang pemicu: saldo < Q1).\n"
+            )
+            return (
+                "🧪 *SIMULASI: RISIKO LISTRIK PADAM SEBELUM FAJAR*\n"
+                f"📅 {data_label}: *{ts}*\n\n"
+                f"{quota_line}"
+                f"Kebutuhan estimasi kuadran dini hari (Q1): *{q1:.2f} kWh*.\n"
+                f"Daya aktif saat ini: *{p_watt:.0f} Watt*.\n\n"
+                "💡 *Saran Tindakan:*\n"
+                f"Batasi total pemakaian beban di bawah *{safe_cap:.0f} Watt* agar listrik bertahan hingga pagi!"
+                f"{fallback_note}"
+            )
+
+        if category == "CUTOFF":
+            if sample:
+                status_line = (
+                    f"Saldo token listrik Anda telah *{saldo:.2f} kWh*.\n"
+                    "Relay utama JAIRU telah memutus beban listrik untuk pengamanan.\n\n"
+                )
+            else:
+                status_line = (
+                    f"Saldo token saat ini: *{saldo:.2f} kWh*.\n"
+                    "Relay utama JAIRU akan memutus beban listrik saat saldo mencapai 0.00 kWh.\n\n"
+                )
+            return (
+                "🧪 *SIMULASI: LISTRIK PADAM - SALDO TOKEN HABIS*\n"
+                f"📅 {data_label}: *{ts}*\n\n"
+                f"{status_line}"
+                "Silakan isi token via keypad fisik ESP32 untuk menyalakan kembali daya listrik."
+            )
+
+        if category == "TOPUP":
+            if sample:
+                delta = float(sample.get("delta") or 0.0)
+                note = ""
+            else:
+                delta = 0.0
+                note = "\n\nCatatan: belum ada event top-up pada data telemetri; nilai saldo & runway di atas adalah data terakhir."
+            return (
+                "🧪 *SIMULASI: TOP-UP TOKEN BERHASIL DITERIMA*\n"
+                f"📅 {data_label}: *{ts}*\n\n"
+                f"Penambahan Kuota: *+{delta:.2f} kWh*\n"
+                f"Total Saldo Aktif: *{saldo:.2f} kWh*\n"
+                f"Estimasi Runway Baru: *{runway:.1f} Jam*\n\n"
+                "Terima kasih, sistem kembali memantau pemakaian listrik rumah Anda."
+                f"{note}"
+            )
+
+        return SIMULATION_MESSAGES.get(category)
 
     # ----------------------------------------------------------------------
     # Pengecekan Telemetri Real-Time (Non-Blocking)

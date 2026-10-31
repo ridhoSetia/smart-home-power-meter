@@ -740,6 +740,24 @@ async def send_test_notification(request: Request):
     return {"status": "success", "message": f"Pesan uji coba berhasil dikirim ke {phone}"}
 
 
+@app.post("/api/notifications/simulate/{category}")
+async def simulate_notification_rule(category: str, request: Request):
+    """Kirim contoh pesan suatu aturan berbasis data telemetri tanpa memengaruhi state alert otomatis."""
+    message = await asyncio.to_thread(whatsapp_notifier.build_simulation_message, category.upper())
+    if not message:
+        raise HTTPException(status_code=404, detail="Kategori simulasi tidak tersedia")
+
+    body = await request.json()
+    phone = body.get("recipient_phone") or whatsapp_notifier.get_config().get("recipient_phone")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Nomor WhatsApp penerima belum diisi")
+
+    ok = await whatsapp_notifier._send_and_log(f"SIMULATION_{category.upper()}", phone, message)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Gagal mengirim simulasi. Pastikan sesi WhatsApp terhubung dan nomor valid.")
+    return {"status": "success", "message": "Pesan simulasi berhasil dikirim ke WhatsApp"}
+
+
 @app.post("/api/notifications/daily-digest")
 async def trigger_manual_daily_digest():
     """Pemicu manual pengiriman laporan ringkasan energi harian AI."""
