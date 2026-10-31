@@ -27,12 +27,14 @@ if os.path.exists(_env_path):
         print(f"[!] Gagal membaca .env: {_e}")
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.templating import Jinja2Templates
 import paho.mqtt.client as mqtt
 
 # [LLM] Penasihat LLM (Tier 3) — modul tambahan
 from recommender_engine import LLMAdvisor
+# [WhatsApp] Gateway WAHA & Engine Alert
+from whatsapp_notifier import WhatsAppAlertEngine
 
 # Konfigurasi Template
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
@@ -138,6 +140,97 @@ def init_db():
     """)
     # Index agar query rentang tanggal tetap cepat saat data menumpuk
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_ts ON telemetry_history(timestamp)")
+
+    # ----------------------------------------------------------------------
+    # Tabel-tabel Notifikasi WhatsApp & Audit Trail
+    # ----------------------------------------------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notification_configs (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            recipient_phone VARCHAR(25) NOT NULL DEFAULT '',
+            alert_overload_enabled BOOLEAN DEFAULT 1,
+            overload_threshold_va REAL DEFAULT 1300.0,
+            alert_runway_12h_enabled BOOLEAN DEFAULT 1,
+            alert_runway_6h_enabled BOOLEAN DEFAULT 1,
+            alert_dawn_risk_enabled BOOLEAN DEFAULT 1,
+            alert_cutoff_enabled BOOLEAN DEFAULT 1,
+            alert_topup_enabled BOOLEAN DEFAULT 1,
+            daily_digest_enabled BOOLEAN DEFAULT 1,
+            daily_digest_time VARCHAR(5) DEFAULT '20:00',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # Migrasi kolom alert_dawn_risk_enabled jika tabel sudah ada sebelumnya
+    try:
+        cursor.execute("ALTER TABLE notification_configs ADD COLUMN alert_dawn_risk_enabled BOOLEAN DEFAULT 1")
+    except Exception:
+        pass
+    cursor.execute("""
+        INSERT OR IGNORE INTO notification_configs
+        (id, recipient_phone, alert_overload_enabled, overload_threshold_va, alert_runway_12h_enabled, alert_runway_6h_enabled, alert_dawn_risk_enabled, alert_cutoff_enabled, alert_topup_enabled, daily_digest_enabled, daily_digest_time)
+        VALUES (1, '', 1, 1300.0, 1, 1, 1, 1, 1, 1, '20:00')
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_runtime_states (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            is_overload_locked BOOLEAN DEFAULT 0,
+            runway_12h_locked BOOLEAN DEFAULT 0,
+            runway_6h_locked BOOLEAN DEFAULT 0,
+            runway_extender_locked BOOLEAN DEFAULT 0,
+            is_cutoff_locked BOOLEAN DEFAULT 0,
+            last_known_saldo REAL DEFAULT 0.0,
+            last_alert_timestamp DATETIME
+        )
+    """)
+    # Migrasi kolom runway_extender_locked jika tabel sudah ada sebelumnya
+    try:
+        cursor.execute("ALTER TABLE alert_runtime_states ADD COLUMN runway_extender_locked BOOLEAN DEFAULT 0")
+    except Exception:
+        pass
+    cursor.execute("""
+        INSERT OR IGNORE INTO alert_runtime_states
+        (id, is_overload_locked, runway_12h_locked, runway_6h_locked, runway_extender_locked, is_cutoff_locked, last_known_saldo)
+        VALUES (1, 0, 0, 0, 0, 0, 0.0)
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notification_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            category VARCHAR(30) NOT NULL,
+            recipient VARCHAR(25) NOT NULL,
+            message_content TEXT NOT NULL,
+            status VARCHAR(15) NOT NULL,
+            waha_message_id VARCHAR(100),
+            error_message TEXT,
+            retry_count INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_logs_ts ON notification_logs(timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_logs_category ON notification_logs(category)")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS daily_energy_digests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_date DATE UNIQUE NOT NULL,
+            total_kwh REAL NOT NULL,
+            estimated_cost_rp INTEGER NOT NULL,
+            peak_watt REAL NOT NULL,
+            peak_va REAL NOT NULL,
+            avg_power_factor REAL NOT NULL,
+            end_saldo_kwh REAL NOT NULL,
+            tinyml_q1_avg REAL,
+            tinyml_q2_avg REAL,
+            tinyml_q3_avg REAL,
+            tinyml_q4_avg REAL,
+            llm_narrative TEXT,
+            delivery_status VARCHAR(15) DEFAULT 'PENDING',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_digest_date ON daily_energy_digests(report_date)")
+
     conn.commit()
     conn.close()
 
@@ -261,6 +354,9 @@ latest_telemetry: Dict[str, Any] = {
 # aturan deterministik tidak diubah.
 advisor = LLMAdvisor(KONTRAK_DAYA_VA, TARIF_PER_KWH)
 
+# [WhatsApp] Instans engine alert WhatsApp WAHA
+whatsapp_notifier = WhatsAppAlertEngine(resolve_db_path, TARIF_PER_KWH)
+
 
 # --------------------------------------------------------------------------
 # Komunikasi MQTT (HiveMQ Cloud / Broker Lokal)
@@ -331,10 +427,11 @@ def on_mqtt_message(client, userdata, msg):
         # Paket siaran = telemetri + hasil DSS
         packet = build_packet(record)
 
-        # [LLM] Pemicu otomatis (transisi status / siklus berkala). Non-blocking:
+        # [LLM & WhatsApp] Pemicu otomatis (transisi status / siklus berkala). Non-blocking:
         # hanya menjadwalkan coroutine di event loop utama.
         if main_loop is not None and main_loop.is_running():
             asyncio.run_coroutine_threadsafe(advisor.on_telemetry(record, packet["dss"]), main_loop)
+            asyncio.run_coroutine_threadsafe(whatsapp_notifier.on_telemetry(record, relay_state), main_loop)
 
         # Simpan ke database SQLite
         conn = get_db_connection()
@@ -375,12 +472,15 @@ mqtt_client.on_message = on_mqtt_message
 async def lifespan(app: FastAPI):
     global main_loop
     main_loop = asyncio.get_running_loop()
+    await whatsapp_notifier.init_state()
+    scheduler_task = asyncio.create_task(whatsapp_notifier.scheduler_loop())
     try:
         mqtt_client.connect_async(MQTT_BROKER, MQTT_PORT, 60)
         mqtt_client.loop_start()
     except Exception as e:
         print(f"[!] Peringatan: Tidak dapat memulai koneksi MQTT: {e}")
     yield
+    scheduler_task.cancel()
     mqtt_client.loop_stop()
     mqtt_client.disconnect()
 
@@ -401,6 +501,13 @@ async def index_page(request: Request):
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
     return templates.TemplateResponse(request, "history.html", {
+        "kontrak_daya_va": KONTRAK_DAYA_VA
+    })
+
+
+@app.get("/notifications", response_class=HTMLResponse)
+async def notifications_page(request: Request):
+    return templates.TemplateResponse(request, "notifications.html", {
         "kontrak_daya_va": KONTRAK_DAYA_VA
     })
 
@@ -587,3 +694,122 @@ async def set_relay(state: str):
         return {"status": "success", "relay_on": relay_state, "published": payload, "topic": MQTT_RELAY_TOPIC}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal publish MQTT: {e}")
+
+
+# --------------------------------------------------------------------------
+# [WhatsApp] Endpoint Gateway WAHA & Notifikasi Otomatis
+# --------------------------------------------------------------------------
+@app.get("/api/notifications/config")
+async def get_notification_config():
+    """Ambil konfigurasi notifikasi WhatsApp."""
+    return {"status": "success", "data": whatsapp_notifier.get_config()}
+
+
+@app.put("/api/notifications/config")
+async def update_notification_config(request: Request):
+    """Simpan perubahan konfigurasi nomor & ambang batas alert."""
+    payload = await request.json()
+    updated = whatsapp_notifier.update_config(payload)
+    return {"status": "success", "data": updated}
+
+
+@app.post("/api/notifications/test")
+async def send_test_notification(request: Request):
+    """Kirim pesan uji coba instan ke WhatsApp penerima."""
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    phone = body.get("recipient_phone") or whatsapp_notifier.get_config().get("recipient_phone")
+    if not phone:
+        raise HTTPException(status_code=400, detail="Nomor WhatsApp penerima belum diisi")
+
+    now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S WITA")
+    msg = (
+        "🔔 *JAIRU SMART POWER METER - TES NOTIFIKASI*\n\n"
+        "Halo! Ini adalah pesan uji coba dari sistem IoT JAIRU.\n"
+        "Gateway WhatsApp WAHA dan pipeline notifikasi otomatis berhasil terhubung 100%.\n\n"
+        f"📅 Waktu: *{now_str}*\n"
+        "⚡ Status Pemantauan: *AKTIF 24/7*"
+    )
+    ok = await whatsapp_notifier._send_and_log("TEST", phone, msg)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Gagal mengirim pesan melalui gateway WAHA. Pastikan sesi terhubung dan nomor valid.")
+    return {"status": "success", "message": f"Pesan uji coba berhasil dikirim ke {phone}"}
+
+
+@app.post("/api/notifications/daily-digest")
+async def trigger_manual_daily_digest():
+    """Pemicu manual pengiriman laporan ringkasan energi harian AI."""
+    result = await whatsapp_notifier.run_daily_digest(force=True)
+    return result
+
+
+@app.get("/api/notifications/logs")
+async def get_notification_logs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    category: Optional[str] = Query(None)
+):
+    """Ambil riwayat log notifikasi WhatsApp (audit trail)."""
+    conn = get_db_connection()
+    try:
+        query = "SELECT * FROM notification_logs"
+        params = []
+        if category:
+            query += " WHERE category = ?"
+            params.append(category)
+        query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        rows = conn.execute(query, params).fetchall()
+
+        count_q = "SELECT COUNT(*) as total FROM notification_logs"
+        count_params = []
+        if category:
+            count_q += " WHERE category = ?"
+            count_params.append(category)
+        total_rows = conn.execute(count_q, count_params).fetchone()["total"]
+
+        return {
+            "status": "success",
+            "total": total_rows,
+            "items": [dict(r) for r in rows]
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/waha/session")
+async def get_waha_session_status():
+    """Periksa status sesi WAHA (WORKING, SCAN_QR_CODE, STOPPED, OFFLINE)."""
+    return await whatsapp_notifier.waha.get_session_status()
+
+
+@app.post("/api/waha/start")
+async def start_waha_session():
+    """Mulai / jalankan sesi WAHA."""
+    return await whatsapp_notifier.waha.start_session()
+
+
+@app.post("/api/waha/stop")
+async def stop_waha_session():
+    """Hentikan sesi WAHA."""
+    return await whatsapp_notifier.waha.stop_session()
+
+
+@app.post("/api/waha/logout")
+async def logout_waha_session():
+    """Putus pairing / logout dari WhatsApp."""
+    return await whatsapp_notifier.waha.logout_session()
+
+
+@app.get("/api/waha/qr")
+async def get_waha_qr():
+    """Ambil QR Code pairing WAHA langsung dalam format gambar PNG."""
+    img_data, mime = await whatsapp_notifier.waha.get_qr_image()
+    if img_data:
+        return Response(content=img_data, media_type=mime or "image/png")
+    raise HTTPException(status_code=404, detail="QR Code belum tersedia atau perangkat sudah terhubung")

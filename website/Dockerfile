@@ -7,7 +7,15 @@ FROM python:3.11-slim
 # Mencegah pembuatan file .pyc dan memastikan log Python dialirkan langsung tanpa buffering
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    TZ=Asia/Makassar \
     PORT=7080
+
+# Instal data zona waktu agar waktu proses Python mengikuti WITA (UTC+8).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata && \
+    rm -rf /var/lib/apt/lists/*
 
 # Buat grup dan pengguna non-root dengan UID 1000 (sesuai standar Linux host)
 RUN groupadd -g 1000 appuser && \
@@ -25,7 +33,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /app/data && chown -R appuser:appuser /app && chmod -R 777 /app/data
 
 # Salin source code aplikasi
-COPY --chown=appuser:appuser main.py recommender_engine.py ./
+COPY --chown=appuser:appuser main.py recommender_engine.py whatsapp_notifier.py ./
 COPY --chown=appuser:appuser templates/ ./templates/
 
 # Menghindari masalah izin tulis (permission denied) pada bind-mount folder host dengan UID berbeda
@@ -40,4 +48,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # Perintah default menjalankan server FastAPI dengan Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7080"]
-

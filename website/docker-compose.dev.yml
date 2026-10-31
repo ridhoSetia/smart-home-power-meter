@@ -11,6 +11,7 @@ services:
       # Mount file kode agar perubahan langsung terdeteksi seketika tanpa rebuild
       - ./main.py:/app/main.py
       - ./recommender_engine.py:/app/recommender_engine.py
+      - ./whatsapp_notifier.py:/app/whatsapp_notifier.py
       - ./templates:/app/templates
       - ./data:/app/data
 

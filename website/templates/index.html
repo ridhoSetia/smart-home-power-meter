@@ -162,6 +162,14 @@
             <i class="bx bx-history text-base"></i>
             <span>Riwayat &amp; Analitik</span>
           </a>
+          <a
+            href="/notifications"
+            onclick="if (window.innerWidth < 768) toggleMobileMenu();"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[#9E9E9E] hover:text-[#E0E0E0] hover:bg-[#262626] border border-transparent transition"
+          >
+            <i class="bx bxl-whatsapp text-base text-emerald-400"></i>
+            <span>Notifikasi WhatsApp</span>
+          </a>
         </nav>
       </div>
 
@@ -658,6 +666,45 @@
                 class="text-xs italic transition-opacity duration-500 opacity-0"
               ></span>
             </div>
+          </div>
+        </section>
+
+        <!-- BARIS 4d: Quick Status Gateway WhatsApp & Shortcut Notifikasi -->
+        <section
+          id="waQuickSection"
+          class="bg-[#1E1E1E] rounded-lg border border-[#2E2E2E] px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-sm"
+          aria-label="Status Cepat Gateway WhatsApp"
+        >
+          <div class="flex items-center gap-3">
+            <div
+              class="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center text-xl flex-shrink-0"
+            >
+              <i class="bx bxl-whatsapp"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-[#E0E0E0]">WhatsApp Gateway (WAHA)</span>
+                <span
+                  id="waQuickBadge"
+                  class="px-2 py-0.5 rounded text-[10px] font-semibold border border-[#2E2E2E] text-[#9E9E9E] bg-[#121212]"
+                  >Memeriksa...</span
+                >
+              </div>
+              <p class="text-[#9E9E9E] mt-0.5 text-[11px]">
+                Penerima:
+                <span id="waQuickPhone" class="text-[#E0E0E0] font-mono font-medium">Belum diatur</span>
+                &bull; Alert beban kritis, runway, top-up, &amp; laporan harian
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <a
+              href="/notifications"
+              class="px-3 py-1.5 rounded-md bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-[#E0E0E0] font-semibold flex items-center gap-1.5 transition text-xs"
+            >
+              <i class="bx bx-cog text-emerald-400"></i>
+              <span>Kelola Notifikasi &amp; QR</span>
+            </a>
           </div>
         </section>
 
@@ -1395,6 +1442,50 @@
           .then(r => r.json())
           .then(j => { if (j.status === 'success') applyRelayUI(j.relay_on); })
           .catch(() => {});
+
+        // Sinkronisasi status cepat WhatsApp Gateway
+        function updateQuickWaStatus() {
+          fetch('/api/waha/session')
+            .then(r => r.json())
+            .then(j => {
+              const badge = document.getElementById('waQuickBadge');
+              if (!badge) return;
+              const status = (j.session && j.session.status) ? j.session.status : 'OFFLINE';
+              if (status === 'WORKING') {
+                badge.textContent = 'ONLINE';
+                badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-500/30 text-emerald-400 bg-emerald-500/10';
+              } else if (status === 'SCAN_QR_CODE') {
+                badge.textContent = 'PERLU QR';
+                badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 text-amber-400 bg-amber-500/10 animate-pulse';
+              } else {
+                badge.textContent = 'OFFLINE';
+                badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border border-rose-500/30 text-rose-400 bg-rose-500/10';
+              }
+            })
+            .catch(() => {
+              const badge = document.getElementById('waQuickBadge');
+              if (badge) {
+                badge.textContent = 'OFFLINE';
+                badge.className = 'px-2 py-0.5 rounded text-[10px] font-bold border border-rose-500/30 text-rose-400 bg-rose-500/10';
+              }
+            });
+
+          fetch('/api/notifications/config')
+            .then(r => r.json())
+            .then(j => {
+              const phoneSpan = document.getElementById('waQuickPhone');
+              if (!phoneSpan) return;
+              if (j.data && j.data.recipient_phone) {
+                phoneSpan.textContent = '+' + j.data.recipient_phone.replace('+', '');
+              } else {
+                phoneSpan.textContent = 'Belum diatur';
+              }
+            })
+            .catch(() => {});
+        }
+
+        updateQuickWaStatus();
+        setInterval(updateQuickWaStatus, 30000);
       })();
     </script>
   </body>

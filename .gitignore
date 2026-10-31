@@ -18,6 +18,8 @@ __pycache__/
 *.db-shm
 *.db-journal
 !website/data/.gitkeep
+# Sesi autentikasi WhatsApp WAHA bersifat runtime dan berisi kredensial perangkat.
+website/data/waha/
 
 # MicroSD data dumps
 *.dat

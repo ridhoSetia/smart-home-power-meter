@@ -22,12 +22,14 @@ services:
         required: false
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Asia/Makassar
       # Arahkan path database ke folder volume persistent
       - DB_PATH=/app/data/power_meter.db
       # Fallback nilai default jika tidak disetel di .env
       - MQTT_BROKER=${MQTT_BROKER:-broker.hivemq.com}
       - MQTT_PORT=${MQTT_PORT:-1883}
-      - MQTT_TOPIC=${MQTT_TOPIC:-elevate2026/powermeter/telemetry}
+      - MQTT_TOPIC=${MQTT_TOPIC:-jairu/powermeter/telemetry}
+      - MQTT_RELAY_TOPIC=${MQTT_RELAY_TOPIC:-jairu/powermeter/relay/control}
       - KONTRAK_DAYA_VA=${KONTRAK_DAYA_VA:-1300.0}
       - TARIF_PER_KWH=${TARIF_PER_KWH:-1444.70}
       - MAX_GAP_SECONDS=${MAX_GAP_SECONDS:-300}
@@ -37,6 +39,9 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_PERIODIC_S=${LLM_PERIODIC_S:-600}
       - LLM_MIN_INTERVAL_S=${LLM_MIN_INTERVAL_S:-30}
+      # Antar-container harus memakai nama service Docker, bukan localhost.
+      - WAHA_BASE_URL=http://waha:3000
+      - WAHA_SESSION=${WAHA_SESSION:-default}
     volumes:
       # Mount folder data host ke /app/data kontainer agar file database langsung muncul di direktori OS
       - ./data:/app/data
@@ -46,6 +51,29 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - powermeter_network
+
+  # ----------------------------------------------------------------------------
+  # Gateway WhatsApp HTTP API (WAHA) - Notifikasi Otomatis (Varian Ringan NOWEB)
+  # ----------------------------------------------------------------------------
+  waha:
+    image: devlikeapro/waha:noweb
+    container_name: smart_powermeter_waha
+    restart: unless-stopped
+    ports:
+      - "${WAHA_PORT:-3000}:3000"
+    # Memakai kredensial tetap dari .env agar API key tidak berubah setiap container restart.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - TZ=Asia/Makassar
+      - WAHA_LOG_FORMAT=JSON
+      - WAHA_LOG_LEVEL=INFO
+      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+    volumes:
+      - ./data/waha:/app/.sessions
     networks:
       - powermeter_network
 

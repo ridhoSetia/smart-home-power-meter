@@ -1,0 +1,1195 @@
+<!doctype html>
+<html lang="id" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notifikasi WhatsApp | JAIRU</title>
+    <!-- Font: Inter (Sans-Serif) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Boxicons CDN -->
+    <link
+      href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css"
+      rel="stylesheet"
+    />
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: [
+                "Inter",
+                "-apple-system",
+                "BlinkMacSystemFont",
+                "Segoe UI",
+                "Roboto",
+                "sans-serif",
+              ],
+              mono: [
+                "Inter",
+                "-apple-system",
+                "BlinkMacSystemFont",
+                "Segoe UI",
+                "Roboto",
+                "sans-serif",
+              ],
+            },
+            colors: {
+              dark: {
+                base: "#121212",
+                surface: "#1E1E1E",
+                elevated: "#181818",
+                border: "#2E2E2E",
+                hover: "#262626",
+                muted: "#9E9E9E",
+                text: "#E0E0E0",
+                accent: "#3B82F6",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body,
+      input,
+      button,
+      select,
+      textarea {
+        font-family:
+          "Inter",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          sans-serif !important;
+      }
+      .font-tabular {
+        font-feature-settings: "tnum" 1;
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-[#121212] text-[#E0E0E0] font-sans min-h-screen antialiased selection:bg-[#3B82F6]/30 selection:text-white"
+  >
+    <!-- Backdrop Overlay untuk Mobile -->
+    <div
+      id="sidebarBackdrop"
+      onclick="toggleMobileMenu()"
+      class="fixed inset-0 bg-black/75 backdrop-blur-sm z-40 hidden md:hidden transition-opacity duration-300"
+    ></div>
+
+    <!-- Sidebar Navigasi -->
+    <aside
+      id="sidebarDrawer"
+      class="fixed inset-y-0 left-0 z-50 w-64 bg-[#181818] border-r border-[#2E2E2E] transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col justify-between p-4 md:py-5"
+    >
+      <div>
+        <!-- Header Sidebar -->
+        <div
+          class="flex items-center justify-between pb-4 border-b border-[#2E2E2E] md:border-b-0 md:pb-0"
+        >
+          <div class="flex items-center space-x-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span
+                  class="font-extrabold text-sm tracking-wider text-[#E0E0E0]"
+                  >JAIRU</span
+                >
+              </div>
+              <span class="text-[11px] text-[#9E9E9E] block truncate font-sans"
+                >Smart Power Meter</span
+              >
+            </div>
+          </div>
+
+          <!-- Tombol Tutup Khusus Mobile Drawer -->
+          <button
+            type="button"
+            onclick="toggleMobileMenu()"
+            class="md:hidden p-1.5 rounded-md text-[#9E9E9E] hover:text-[#E0E0E0] hover:bg-[#262626] border border-[#2E2E2E] transition"
+            aria-label="Tutup Menu"
+          >
+            <i class="bx bx-x text-xl"></i>
+          </button>
+        </div>
+
+        <!-- Menu Navigasi Samping -->
+        <nav class="mt-6 flex flex-col gap-1.5 text-xs md:text-sm font-medium">
+          <a
+            href="/"
+            onclick="if (window.innerWidth < 768) toggleMobileMenu();"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[#9E9E9E] hover:text-[#E0E0E0] hover:bg-[#262626] border border-transparent transition"
+          >
+            <i class="bx bx-tachometer text-base"></i>
+            <span>Dasbor Real-time</span>
+          </a>
+          <a
+            href="/history"
+            onclick="if (window.innerWidth < 768) toggleMobileMenu();"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-md text-[#9E9E9E] hover:text-[#E0E0E0] hover:bg-[#262626] border border-transparent transition"
+          >
+            <i class="bx bx-history text-base"></i>
+            <span>Riwayat &amp; Analitik</span>
+          </a>
+          <a
+            href="/notifications"
+            onclick="if (window.innerWidth < 768) toggleMobileMenu();"
+            class="flex items-center gap-2.5 px-3 py-2.5 rounded-md bg-emerald-500/15 text-[#E0E0E0] border border-emerald-500/30 font-semibold"
+            aria-current="page"
+          >
+            <i class="bx bxl-whatsapp text-base text-emerald-400"></i>
+            <span>Notifikasi WhatsApp</span>
+          </a>
+        </nav>
+      </div>
+
+      <!-- Status Gateway WhatsApp di Bawah Sidebar -->
+      <div class="pt-3 border-t border-[#2E2E2E] w-full">
+        <div
+          class="flex items-center gap-2.5 bg-[#1E1E1E] px-3 py-2 rounded-md border border-[#2E2E2E] text-xs"
+        >
+          <span
+            id="sidebarWaDot"
+            class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"
+            aria-hidden="true"
+          ></span>
+          <div class="min-w-0 leading-tight">
+            <span
+              id="sidebarWaText"
+              class="text-[#E0E0E0] font-medium block truncate text-[11px]"
+              >Memeriksa Gateway...</span
+            >
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Top Header Khusus Mobile -->
+    <header
+      class="sticky top-0 z-30 bg-[#181818]/95 backdrop-blur border-b border-[#2E2E2E] px-4 py-2.5 flex items-center justify-between md:hidden"
+    >
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          onclick="toggleMobileMenu()"
+          class="p-1.5 rounded-md text-[#E0E0E0] hover:bg-[#262626] border border-[#2E2E2E] transition focus:outline-none"
+          aria-label="Buka Menu Navigasi"
+        >
+          <i class="bx bx-menu text-2xl"></i>
+        </button>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-sm tracking-wider text-[#E0E0E0]"
+            >JAIRU &bull; WhatsApp</span
+          >
+        </div>
+      </div>
+    </header>
+
+    <!-- Konten Utama (md:pl-64 untuk Sidebar) -->
+    <div class="md:pl-64 flex flex-col min-h-screen">
+      <!-- Top Breadcrumb Bar -->
+      <header
+        class="bg-[#181818]/90 border-b border-[#2E2E2E] px-4 sm:px-6 py-2.5 flex items-center justify-between text-xs text-[#9E9E9E]"
+      >
+        <div class="flex items-center gap-1.5 truncate">
+          <a href="/" class="hover:text-[#E0E0E0] transition">Home</a>
+          <span>/</span>
+          <span class="text-[#E0E0E0] font-medium">Notifikasi WhatsApp</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] text-[#9E9E9E] hidden sm:inline"
+            >Gateway:</span
+          >
+          <span
+            id="topStatusBadge"
+            class="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase bg-amber-500/10 border border-amber-500/30 text-amber-400"
+            >Memeriksa...</span
+          >
+        </div>
+      </header>
+
+      <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 space-y-5">
+        <!-- Toast Notification Area -->
+        <div id="toastArea" class="fixed top-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+        <!-- ============================================================= -->
+        <!-- PANEL 1: MANAJEMEN SESI GATEWAY WHATSAPP (WAHA)              -->
+        <!-- ============================================================= -->
+        <section
+          class="bg-[#1E1E1E] rounded-lg border border-[#2E2E2E] overflow-hidden shadow-sm"
+          aria-label="Manajemen Sesi WAHA"
+        >
+          <div
+            class="px-5 py-3.5 border-b border-[#2E2E2E] flex flex-wrap items-center justify-between gap-3"
+          >
+            <div class="flex items-center gap-2.5">
+              <div
+                class="w-7 h-7 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center text-lg flex-shrink-0"
+              >
+                <i class="bx bxl-whatsapp"></i>
+              </div>
+              <div>
+                <h2 class="text-sm font-bold text-[#E0E0E0] tracking-wide">
+                  Gateway WhatsApp (WAHA)
+                </h2>
+                <p class="text-[11px] text-[#9E9E9E]">
+                  WhatsApp HTTP API Container &bull; Sesi:
+                  <span class="font-mono text-[#E0E0E0]">default</span>
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                onclick="refreshWahaSession()"
+                class="px-2.5 py-1.5 rounded-md bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-xs text-[#E0E0E0] flex items-center gap-1 transition"
+                title="Segarkan Status"
+              >
+                <i class="bx bx-refresh text-base"></i>
+                <span class="hidden sm:inline">Segarkan</span>
+              </button>
+              <button
+                id="btnStartSession"
+                type="button"
+                onclick="startWahaSession()"
+                class="px-2.5 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center gap-1 transition disabled:opacity-50"
+              >
+                <i class="bx bx-play text-base"></i>
+                <span>Mulai Sesi</span>
+              </button>
+              <button
+                id="btnLogoutSession"
+                type="button"
+                onclick="logoutWahaSession()"
+                class="px-2.5 py-1.5 rounded-md bg-rose-700/80 hover:bg-rose-600 text-xs font-semibold text-white flex items-center gap-1 transition disabled:opacity-50"
+                title="Putus Pairing WhatsApp"
+              >
+                <i class="bx bx-log-out text-base"></i>
+                <span>Putus Sesi</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
+            <!-- Kolom 1 & 2: Info Status & Panduan -->
+            <div class="md:col-span-2 space-y-4">
+              <div
+                class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-wrap items-center justify-between gap-3"
+              >
+                <div>
+                  <div class="text-xs text-[#9E9E9E]">Status Koneksi Sesi:</div>
+                  <div class="flex items-center gap-2 mt-1">
+                    <span
+                      id="sessionStatusBadge"
+                      class="px-3 py-1 rounded-full text-xs font-bold uppercase bg-amber-500/10 border border-amber-500/30 text-amber-400"
+                      >MEMERIKSA...</span
+                    >
+                    <span
+                      id="sessionDetailText"
+                      class="text-xs text-[#9E9E9E]"
+                    ></span>
+                  </div>
+                </div>
+
+                <div class="text-right">
+                  <div class="text-xs text-[#9E9E9E]">Nomor WhatsApp Terhubung:</div>
+                  <div
+                    id="connectedPhoneText"
+                    class="text-sm font-bold font-mono text-[#E0E0E0] mt-0.5"
+                  >
+                    —
+                  </div>
+                </div>
+              </div>
+
+              <!-- Petunjuk Pairing QR -->
+              <div
+                id="pairingGuideBox"
+                class="p-4 rounded-lg bg-[#181818]/60 border border-[#2E2E2E] text-xs text-[#9E9E9E] space-y-2"
+              >
+                <div class="font-bold text-[#E0E0E0] flex items-center gap-1.5">
+                  <i class="bx bx-qr-scan text-emerald-400 text-base"></i>
+                  <span>Cara Menghubungkan WhatsApp:</span>
+                </div>
+                <ol class="list-decimal list-inside space-y-1 leading-relaxed text-[#D4D4D4]">
+                  <li>Buka aplikasi <strong>WhatsApp</strong> di smartphone Anda.</li>
+                  <li>Buka menu <strong>Titik Tiga / Pengaturan</strong> &gt; pilih <strong>Perangkat Tertaut</strong>.</li>
+                  <li>Tekan tombol <strong>Tautkan Perangkat</strong>.</li>
+                  <li>Arahkan kamera smartphone ke QR Code di sebelah kanan.</li>
+                </ol>
+                <p class="text-[11px] text-[#9E9E9E]">
+                  *Setelah berhasil memindai, status otomatis berubah menjadi <span class="text-emerald-400 font-semibold">TERHUBUNG (WORKING)</span>.
+                </p>
+              </div>
+            </div>
+
+            <!-- Kolom 3: Kotak QR Code Dinamis -->
+            <div
+              class="flex flex-col items-center justify-center p-4 bg-[#181818] rounded-lg border border-[#2E2E2E] text-center min-h-[220px]"
+            >
+              <div id="qrLoadingState" class="space-y-2 py-6 text-xs text-[#9E9E9E]">
+                <i class="bx bx-loader-alt text-3xl animate-spin text-emerald-400"></i>
+                <p>Memuat status QR Code...</p>
+              </div>
+
+              <!-- Image QR Code Container -->
+              <div id="qrImageContainer" class="hidden flex flex-col items-center space-y-3">
+                <div class="bg-white p-2.5 rounded-lg border-2 border-emerald-500/40 shadow-lg">
+                  <img
+                    id="qrCodeImage"
+                    src=""
+                    alt="QR Code WAHA"
+                    class="w-48 h-48 object-contain"
+                  />
+                </div>
+                <div class="flex items-center gap-2 text-[11px] text-amber-400">
+                  <i class="bx bx-time-five"></i>
+                  <span>QR berganti otomatis tiap beberapa detik</span>
+                </div>
+                <button
+                  type="button"
+                  onclick="reloadQRCode()"
+                  class="px-2.5 py-1 rounded bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-[11px] text-[#E0E0E0] transition"
+                >
+                  <i class="bx bx-refresh"></i> Segarkan QR
+                </button>
+              </div>
+
+              <!-- State Connected (Sudah Terhubung) -->
+              <div id="qrConnectedState" class="hidden flex flex-col items-center space-y-2 py-6 text-center">
+                <div class="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center text-3xl">
+                  <i class="bx bx-check-double"></i>
+                </div>
+                <div class="font-bold text-sm text-[#E0E0E0]">Perangkat Terhubung!</div>
+                <p class="text-xs text-[#9E9E9E] max-w-[200px]">
+                  Gateway WAHA siap mengirimkan alert dan laporan otomatis.
+                </p>
+              </div>
+
+              <!-- State Offline / Stopped -->
+              <div id="qrOfflineState" class="hidden flex flex-col items-center space-y-2 py-6 text-center">
+                <div class="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center text-3xl">
+                  <i class="bx bx-wifi-off"></i>
+                </div>
+                <div class="font-bold text-sm text-[#E0E0E0]">Gateway Offline</div>
+                <p class="text-xs text-[#9E9E9E] max-w-[200px]">
+                  Tekan 'Mulai Sesi' atau periksa container WAHA di server.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- PANEL 2: PENGATURAN PENERIMA & ATURAN PEMICU ALERT            -->
+        <!-- ============================================================= -->
+        <section
+          class="bg-[#1E1E1E] rounded-lg border border-[#2E2E2E] overflow-hidden shadow-sm"
+          aria-label="Konfigurasi Penerima dan Ambang Batas"
+        >
+          <div
+            class="px-5 py-3.5 border-b border-[#2E2E2E] flex flex-wrap items-center justify-between gap-3"
+          >
+            <div class="flex items-center gap-2">
+              <i class="bx bx-slider-alt text-[#3B82F6] text-lg"></i>
+              <h2 class="text-sm font-bold text-[#E0E0E0] tracking-wide">
+                Konfigurasi Penerima &amp; Aturan Alert
+              </h2>
+            </div>
+            <div class="text-xs text-[#9E9E9E]">
+              Penyimpanan persisten di SQLite &bull; State machine non-blocking
+            </div>
+          </div>
+
+          <form id="formAlertConfig" onsubmit="saveAlertConfig(event)" class="p-5 space-y-5">
+            <!-- Baris Penerima WhatsApp Utama -->
+            <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex flex-wrap items-end justify-between gap-4">
+              <div class="flex-1 min-w-[240px] space-y-1.5">
+                <label class="block text-xs font-semibold text-[#E0E0E0]">
+                  Nomor WhatsApp Penerima Alert
+                </label>
+                <div class="relative">
+                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#9E9E9E]">
+                    <i class="bx bxl-whatsapp text-lg text-emerald-400"></i>
+                  </div>
+                  <input
+                    id="inputPhone"
+                    type="text"
+                    required
+                    placeholder="Contoh: +6281234567890 atau 08123456789"
+                    class="w-full bg-[#121212] border border-[#2E2E2E] rounded-md pl-10 pr-3 py-2 text-sm text-[#E0E0E0] font-mono focus:outline-none focus:border-[#3B82F6] transition"
+                  />
+                </div>
+                <p class="text-[11px] text-[#9E9E9E]">
+                  Nomor akan dinormalisasi otomatis ke format internasional (misal: 6281234567890).
+                </p>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  id="btnTestMessage"
+                  type="button"
+                  onclick="sendTestMessage()"
+                  class="px-3.5 py-2 rounded-md bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-xs font-semibold text-[#E0E0E0] flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  <i class="bx bx-paper-plane text-emerald-400"></i>
+                  <span>Tes Kirim Pesan</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Grid Pengaturan Alert & Toggle -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Alert 1: Beban Kritis 85% -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bx-error text-rose-400 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Beban Kritis (&ge; 85% Kapasitas)</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Kirim alert saat daya semu mencapai 85% batas kontrak. Menggunakan <em>hysteresis lock</em> (baru reset jika turun ke &lt; 70%) untuk mencegah spam.
+                  </p>
+                  <div class="pt-2 flex items-center gap-2">
+                    <span class="text-[11px] text-[#9E9E9E]">Batas Kontrak:</span>
+                    <input
+                      id="inputThresholdVa"
+                      type="number"
+                      step="50"
+                      min="450"
+                      max="11000"
+                      class="w-24 bg-[#121212] border border-[#2E2E2E] rounded px-2 py-1 text-xs text-[#E0E0E0] font-mono"
+                      value="1300"
+                    />
+                    <span class="text-[11px] text-[#9E9E9E]">VA</span>
+                  </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleOverload" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                </label>
+              </div>
+
+              <!-- Alert 2: Prediksi Runway Menipis (< 12 Jam) -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bx-time text-amber-400 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Peringatan Kuota Runway (&lt; 12 Jam)</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Evaluasi proyeksi TinyML saat sisa waktu ketahanan saldo menyentuh milestone peringatan (&lt; 12 jam). Dikirim tepat 1x per siklus pengurasan.
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleRunway12h" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
+
+              <!-- Alert 3: Prediksi Runway Darurat (< 6 Jam) -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bxs-alarm-exclamation text-rose-500 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Darurat Kuota Runway (&lt; 6 Jam)</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Notifikasi intensif saat estimasi saldo tinggal kurang dari 6 jam untuk mencegah listrik padam saat malam/fajar.
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleRunway6h" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                </label>
+              </div>
+
+              <!-- Alert 3b: Risiko Padam Sebelum Fajar (Runway Extender) -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bx-moon text-indigo-400 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Risiko Padam Sebelum Fajar (Runway Extender)</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Peringatan dini malam hari (pukul 21:00&ndash;05:00) jika saldo token lebih kecil dari proyeksi TinyML Q1 (00:00&ndash;06:00). Memberikan saran batas aman daya (Watt) agar listrik bertahan hingga pukul 07:00 pagi.
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleDawnRisk" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
+
+              <!-- Alert 4: Saldo Habis & Relay Cut-Off -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bx-power-off text-rose-400 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Saldo Habis &amp; Relay Cut-Off</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Kirim alert instan saat saldo mencapai 0.00 kWh dan relay utama GPIO 4 secara otomatis memutus aliran beban listrik.
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleCutoff" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#3B82F6]"></div>
+                </label>
+              </div>
+
+              <!-- Alert 5: Konfirmasi Top-Up Token -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bx-check-circle text-emerald-400 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Konfirmasi Top-Up Token</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Deteksi otomatis ketika saldo token bertambah signifikan (&ge; 0.5 kWh) pasca pengisian keypad fisik ESP32. Otomatis mereset semua status kunci.
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleTopup" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              <!-- Alert 6: Laporan Ringkasan Energi Harian (AI Daily Digest) -->
+              <div class="p-4 rounded-lg bg-[#181818] border border-[#2E2E2E] flex items-start justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <i class="bx bx-bot text-purple-400 text-lg"></i>
+                    <span class="text-xs font-bold text-[#E0E0E0]">Laporan Ringkasan Cerdas AI (Daily Digest)</span>
+                  </div>
+                  <p class="text-[11px] text-[#9E9E9E] leading-relaxed">
+                    Scheduler harian otomatis yang mengagregasi 24 jam konsumsi, evaluasi power factor, proyeksi TinyML Q1-Q4, dan narasi rekomendasi efisiensi dari LLM.
+                  </p>
+                  <div class="pt-2 flex flex-wrap items-center gap-2">
+                    <span class="text-[11px] text-[#9E9E9E]">Waktu Kirim:</span>
+                    <input
+                      id="inputDigestTime"
+                      type="time"
+                      class="bg-[#121212] border border-[#2E2E2E] rounded px-2 py-1 text-xs text-[#E0E0E0] font-mono"
+                      value="20:00"
+                    />
+                    <button
+                      type="button"
+                      onclick="triggerManualDigest()"
+                      class="px-2 py-1 rounded bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-[10px] text-[#D4D4D4] transition"
+                    >
+                      Kirim Laporan Sekarang
+                    </button>
+                  </div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                  <input id="toggleDailyDigest" type="checkbox" class="sr-only peer" checked />
+                  <div class="w-11 h-6 bg-[#2E2E2E] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Tombol Simpan -->
+            <div class="pt-2 flex justify-end">
+              <button
+                id="btnSaveConfig"
+                type="submit"
+                class="px-5 py-2.5 rounded-md bg-[#3B82F6] hover:bg-blue-600 text-white text-xs font-bold flex items-center gap-2 transition shadow-md"
+              >
+                <i class="bx bx-save text-base"></i>
+                <span>Simpan Konfigurasi Notifikasi</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ============================================================= -->
+        <!-- PANEL 3: LOG RIWAYAT NOTIFIKASI WHATSAPP (AUDIT TRAIL)       -->
+        <!-- ============================================================= -->
+        <section
+          class="bg-[#1E1E1E] rounded-lg border border-[#2E2E2E] overflow-hidden shadow-sm"
+          aria-label="Audit Trail Log Notifikasi"
+        >
+          <div
+            class="px-5 py-3.5 border-b border-[#2E2E2E] flex flex-wrap items-center justify-between gap-3"
+          >
+            <div class="flex items-center gap-2">
+              <i class="bx bx-history text-amber-400 text-lg"></i>
+              <h2 class="text-sm font-bold text-[#E0E0E0] tracking-wide">
+                Log Riwayat Notifikasi (Audit Trail)
+              </h2>
+            </div>
+
+            <div class="flex items-center gap-2.5">
+              <select
+                id="filterCategory"
+                onchange="loadNotificationLogs()"
+                class="bg-[#121212] border border-[#2E2E2E] text-xs text-[#E0E0E0] rounded px-2.5 py-1.5 focus:outline-none"
+              >
+                <option value="">Semua Kategori</option>
+                <option value="OVERLOAD">Beban Kritis (&ge; 85%)</option>
+                <option value="RUNWAY_12H">Runway &lt; 12 Jam</option>
+                <option value="RUNWAY_6H">Runway &lt; 6 Jam</option>
+                <option value="DAWN_RISK">Risiko Padam Fajar (Extender)</option>
+                <option value="CUTOFF">Saldo Habis / Cut-Off</option>
+                <option value="TOPUP">Top-Up Token</option>
+                <option value="DAILY_DIGEST">Laporan Harian AI</option>
+                <option value="TEST">Uji Coba (Test)</option>
+              </select>
+
+              <button
+                type="button"
+                onclick="loadNotificationLogs()"
+                class="px-2.5 py-1.5 rounded bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-xs text-[#E0E0E0] flex items-center gap-1 transition"
+              >
+                <i class="bx bx-refresh"></i> Segarkan
+              </button>
+            </div>
+          </div>
+
+          <!-- Tabel Audit Trail -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs text-[#D4D4D4]">
+              <thead class="bg-[#181818] border-b border-[#2E2E2E] text-[11px] font-bold uppercase text-[#9E9E9E] tracking-wider">
+                <tr>
+                  <th scope="col" class="py-3 px-4">Waktu</th>
+                  <th scope="col" class="py-3 px-4">Kategori</th>
+                  <th scope="col" class="py-3 px-4">Penerima</th>
+                  <th scope="col" class="py-3 px-4">Status</th>
+                  <th scope="col" class="py-3 px-4">Pratinjau Pesan</th>
+                  <th scope="col" class="py-3 px-4 text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="logsTableBody" class="divide-y divide-[#2E2E2E]">
+                <tr>
+                  <td colspan="6" class="py-8 text-center text-[#9E9E9E]">
+                    <i class="bx bx-loader-alt animate-spin text-xl text-emerald-400"></i>
+                    <p class="mt-1">Memuat riwayat log notifikasi...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <!-- Modal Pratinjau Pesan Lengkap -->
+      <div
+        id="messageModal"
+        class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 transition-opacity"
+      >
+        <div class="bg-[#1E1E1E] border border-[#2E2E2E] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+          <div class="flex items-center justify-between border-b border-[#2E2E2E] pb-3">
+            <div class="flex items-center gap-2">
+              <i class="bx bxl-whatsapp text-emerald-400 text-xl"></i>
+              <h3 id="modalTitle" class="text-sm font-bold text-[#E0E0E0]">Detail Notifikasi</h3>
+            </div>
+            <button
+              type="button"
+              onclick="closeMessageModal()"
+              class="text-[#9E9E9E] hover:text-white p-1 rounded hover:bg-[#262626] transition"
+            >
+              <i class="bx bx-x text-xl"></i>
+            </button>
+          </div>
+
+          <div class="space-y-3 text-xs">
+            <div class="grid grid-cols-2 gap-2 p-3 bg-[#181818] rounded-md border border-[#2E2E2E]">
+              <div>
+                <span class="text-[#9E9E9E] block text-[11px]">Waktu:</span>
+                <span id="modalTimestamp" class="font-mono text-[#E0E0E0]"></span>
+              </div>
+              <div>
+                <span class="text-[#9E9E9E] block text-[11px]">Penerima:</span>
+                <span id="modalRecipient" class="font-mono text-[#E0E0E0]"></span>
+              </div>
+              <div>
+                <span class="text-[#9E9E9E] block text-[11px]">Kategori:</span>
+                <span id="modalCategory" class="font-semibold text-[#E0E0E0]"></span>
+              </div>
+              <div>
+                <span class="text-[#9E9E9E] block text-[11px]">Status:</span>
+                <span id="modalStatus" class="font-bold"></span>
+              </div>
+            </div>
+
+            <!-- Pesan WhatsApp Format -->
+            <div>
+              <span class="text-[#9E9E9E] block mb-1">Isi Pesan WhatsApp:</span>
+              <div
+                id="modalContent"
+                class="p-4 rounded-lg bg-[#121212] border border-[#2E2E2E] text-xs font-mono whitespace-pre-wrap leading-relaxed text-[#E0E0E0] max-h-64 overflow-y-auto"
+              ></div>
+            </div>
+
+            <div id="modalErrorContainer" class="hidden p-2.5 rounded bg-rose-950/30 border border-rose-500/30 text-rose-400 text-[11px]">
+              <span class="font-bold">Catatan Kegagalan:</span>
+              <span id="modalErrorMessage"></span>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2 border-t border-[#2E2E2E]">
+            <button
+              type="button"
+              onclick="closeMessageModal()"
+              class="px-4 py-1.5 rounded-md bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-xs text-[#E0E0E0] font-semibold"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <footer
+        class="mt-8 border-t border-[#2E2E2E] bg-[#181818] py-3.5 px-4 text-center text-xs text-[#9E9E9E]"
+      >
+        <span>JAIRU Smart Power Meter</span>
+      </footer>
+    </div>
+
+    <!-- JavaScript Logika Notifikasi WhatsApp -->
+    <script>
+      let currentSessionStatus = "UNKNOWN";
+      let qrPollTimer = null;
+      let cachedLogs = [];
+
+      function toggleMobileMenu() {
+        const drawer = document.getElementById("sidebarDrawer");
+        const backdrop = document.getElementById("sidebarBackdrop");
+        if (!drawer || !backdrop) return;
+        const isOpen = drawer.classList.contains("translate-x-0");
+        if (isOpen) {
+          drawer.classList.remove("translate-x-0");
+          drawer.classList.add("-translate-x-full");
+          backdrop.classList.add("hidden");
+        } else {
+          drawer.classList.remove("-translate-x-full");
+          drawer.classList.add("translate-x-0");
+          backdrop.classList.remove("hidden");
+        }
+      }
+
+      function showToast(message, type = "success") {
+        const area = document.getElementById("toastArea");
+        if (!area) return;
+        const toast = document.createElement("div");
+        const colors = type === "success"
+          ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-300"
+          : "bg-rose-950/90 border-rose-500/50 text-rose-300";
+        const icon = type === "success" ? "bx-check-circle" : "bx-error";
+
+        toast.className = `p-3 rounded-lg border shadow-xl flex items-center gap-2 text-xs pointer-events-auto transition-all duration-300 transform translate-y-2 opacity-0 ${colors}`;
+        toast.innerHTML = `<i class='bx ${icon} text-lg'></i><span>${message}</span>`;
+        area.appendChild(toast);
+
+        requestAnimationFrame(() => {
+          toast.classList.remove("translate-y-2", "opacity-0");
+        });
+
+        setTimeout(() => {
+          toast.classList.add("opacity-0", "translate-x-4");
+          setTimeout(() => toast.remove(), 400);
+        }, 4000);
+      }
+
+      // ======================================================================
+      // 1. MANAJEMEN SESI & QR CODE WAHA
+      // ======================================================================
+      async function refreshWahaSession() {
+        try {
+          const res = await fetch("/api/waha/session");
+          const data = await res.json();
+          const session = data.session || {};
+          const status = session.status || "UNKNOWN";
+          currentSessionStatus = status;
+
+          updateSessionUI(status, session);
+        } catch (err) {
+          updateSessionUI("OFFLINE", { error: err.message });
+        }
+      }
+
+      function updateSessionUI(status, session) {
+        const topBadge = document.getElementById("topStatusBadge");
+        const sidebarDot = document.getElementById("sidebarWaDot");
+        const sidebarText = document.getElementById("sidebarWaText");
+        const badge = document.getElementById("sessionStatusBadge");
+        const detail = document.getElementById("sessionDetailText");
+        const phone = document.getElementById("connectedPhoneText");
+
+        const qrLoading = document.getElementById("qrLoadingState");
+        const qrContainer = document.getElementById("qrImageContainer");
+        const qrConnected = document.getElementById("qrConnectedState");
+        const qrOffline = document.getElementById("qrOfflineState");
+
+        qrLoading.classList.add("hidden");
+        qrContainer.classList.add("hidden");
+        qrConnected.classList.add("hidden");
+        qrOffline.classList.add("hidden");
+
+        if (status === "WORKING") {
+          const num = (session.me && session.me.id) ? session.me.id.split("@")[0] : "+62 Terhubung";
+          phone.textContent = "+" + num.replace("+", "");
+          badge.textContent = "TERHUBUNG (WORKING)";
+          badge.className = "px-3 py-1 rounded-full text-xs font-bold uppercase bg-emerald-500/10 border border-emerald-500/40 text-emerald-400";
+          detail.textContent = "Gateway WhatsApp online dan siap digunakan.";
+          topBadge.textContent = "TERHUBUNG";
+          topBadge.className = "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase bg-emerald-500/10 border border-emerald-500/30 text-emerald-400";
+          sidebarDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0";
+          sidebarText.textContent = "WA Gateway: Online";
+
+          qrConnected.classList.remove("hidden");
+          clearInterval(qrPollTimer);
+        } else if (status === "SCAN_QR_CODE") {
+          phone.textContent = "Menunggu scan...";
+          badge.textContent = "PINDAI QR CODE";
+          badge.className = "px-3 py-1 rounded-full text-xs font-bold uppercase bg-amber-500/10 border border-amber-500/40 text-amber-400 animate-pulse";
+          detail.textContent = "Silakan pindai kode QR dengan smartphone Anda.";
+          topBadge.textContent = "SCAN QR";
+          topBadge.className = "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase bg-amber-500/10 border border-amber-500/30 text-amber-400";
+          sidebarDot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0";
+          sidebarText.textContent = "WA Gateway: Butuh QR";
+
+          qrContainer.classList.remove("hidden");
+          reloadQRCode();
+          startQRPolling();
+        } else if (status === "STARTING") {
+          phone.textContent = "Memulai...";
+          badge.textContent = "MEMULAI SESI";
+          badge.className = "px-3 py-1 rounded-full text-xs font-bold uppercase bg-sky-500/10 border border-sky-500/40 text-sky-400";
+          detail.textContent = "Proses bootstrap engine browser WAHA...";
+          qrLoading.classList.remove("hidden");
+        } else {
+          phone.textContent = "Tidak terhubung";
+          badge.textContent = "OFFLINE / STOPPED";
+          badge.className = "px-3 py-1 rounded-full text-xs font-bold uppercase bg-rose-500/10 border border-rose-500/40 text-rose-400";
+          detail.textContent = "Sesi berhenti atau container WAHA belum aktif.";
+          topBadge.textContent = "OFFLINE";
+          topBadge.className = "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase bg-rose-500/10 border border-rose-500/30 text-rose-400";
+          sidebarDot.className = "w-2.5 h-2.5 rounded-full bg-rose-500 flex-shrink-0";
+          sidebarText.textContent = "WA Gateway: Offline";
+
+          qrOffline.classList.remove("hidden");
+          clearInterval(qrPollTimer);
+        }
+      }
+
+      function reloadQRCode() {
+        const img = document.getElementById("qrCodeImage");
+        if (img) {
+          img.src = "/api/waha/qr?t=" + Date.now();
+        }
+      }
+
+      function startQRPolling() {
+        clearInterval(qrPollTimer);
+        qrPollTimer = setInterval(async () => {
+          if (currentSessionStatus === "SCAN_QR_CODE") {
+            reloadQRCode();
+            await refreshWahaSession();
+          } else {
+            clearInterval(qrPollTimer);
+          }
+        }, 6000);
+      }
+
+      async function startWahaSession() {
+        const btn = document.getElementById("btnStartSession");
+        btn.disabled = true;
+        try {
+          const res = await fetch("/api/waha/start", { method: "POST" });
+          const json = await res.json();
+          if (json.status === "success") {
+            showToast("Perintah memulai sesi berhasil dikirim.");
+          } else {
+            showToast("Gagal memulai sesi: " + (json.message || "Error"), "error");
+          }
+        } catch (e) {
+          showToast("Gagal menghubungi server: " + e.message, "error");
+        } finally {
+          btn.disabled = false;
+          setTimeout(refreshWahaSession, 1500);
+        }
+      }
+
+      async function logoutWahaSession() {
+        if (!confirm("Apakah Anda yakin ingin memutuskan pairing WhatsApp pada sesi ini?")) return;
+        const btn = document.getElementById("btnLogoutSession");
+        btn.disabled = true;
+        try {
+          const res = await fetch("/api/waha/logout", { method: "POST" });
+          const json = await res.json();
+          if (json.status === "success") {
+            showToast("Sesi berhasil di-logout/unpair.");
+          } else {
+            showToast("Gagal logout: " + (json.message || "Error"), "error");
+          }
+        } catch (e) {
+          showToast("Gagal menghubungi server: " + e.message, "error");
+        } finally {
+          btn.disabled = false;
+          setTimeout(refreshWahaSession, 1500);
+        }
+      }
+
+      // ======================================================================
+      // 2. KONFIGURASI PENERIMA & AMBANG BATAS
+      // ======================================================================
+      async function loadAlertConfig() {
+        try {
+          const res = await fetch("/api/notifications/config");
+          const json = await res.json();
+          if (json.status === "success" && json.data) {
+            const c = json.data;
+            document.getElementById("inputPhone").value = c.recipient_phone ? "+" + c.recipient_phone.replace("+", "") : "";
+            document.getElementById("inputThresholdVa").value = c.overload_threshold_va || 1300;
+            document.getElementById("toggleOverload").checked = !!c.alert_overload_enabled;
+            document.getElementById("toggleRunway12h").checked = !!c.alert_runway_12h_enabled;
+            document.getElementById("toggleRunway6h").checked = !!c.alert_runway_6h_enabled;
+            document.getElementById("toggleDawnRisk").checked = !!c.alert_dawn_risk_enabled;
+            document.getElementById("toggleCutoff").checked = !!c.alert_cutoff_enabled;
+            document.getElementById("toggleTopup").checked = !!c.alert_topup_enabled;
+            document.getElementById("toggleDailyDigest").checked = !!c.daily_digest_enabled;
+            document.getElementById("inputDigestTime").value = c.daily_digest_time || "20:00";
+          }
+        } catch (e) {
+          showToast("Gagal memuat konfigurasi: " + e.message, "error");
+        }
+      }
+
+      async function saveAlertConfig(e) {
+        e.preventDefault();
+        const btn = document.getElementById("btnSaveConfig");
+        btn.disabled = true;
+        btn.innerHTML = `<i class='bx bx-loader-alt animate-spin'></i><span>Menyimpan...</span>`;
+
+        const payload = {
+          recipient_phone: document.getElementById("inputPhone").value.trim(),
+          overload_threshold_va: Number(document.getElementById("inputThresholdVa").value) || 1300,
+          alert_overload_enabled: document.getElementById("toggleOverload").checked,
+          alert_runway_12h_enabled: document.getElementById("toggleRunway12h").checked,
+          alert_runway_6h_enabled: document.getElementById("toggleRunway6h").checked,
+          alert_dawn_risk_enabled: document.getElementById("toggleDawnRisk").checked,
+          alert_cutoff_enabled: document.getElementById("toggleCutoff").checked,
+          alert_topup_enabled: document.getElementById("toggleTopup").checked,
+          daily_digest_enabled: document.getElementById("toggleDailyDigest").checked,
+          daily_digest_time: document.getElementById("inputDigestTime").value || "20:00",
+        };
+
+        try {
+          const res = await fetch("/api/notifications/config", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const json = await res.json();
+          if (json.status === "success") {
+            showToast("Konfigurasi notifikasi berhasil disimpan!");
+            loadAlertConfig();
+          } else {
+            showToast("Gagal menyimpan: " + (json.detail || "Error"), "error");
+          }
+        } catch (err) {
+          showToast("Koneksi gagal: " + err.message, "error");
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = `<i class='bx bx-save text-base'></i><span>Simpan Konfigurasi Notifikasi</span>`;
+        }
+      }
+
+      async function sendTestMessage() {
+        const phone = document.getElementById("inputPhone").value.trim();
+        if (!phone) {
+          showToast("Silakan isi nomor WhatsApp penerima terlebih dahulu.", "error");
+          document.getElementById("inputPhone").focus();
+          return;
+        }
+
+        const btn = document.getElementById("btnTestMessage");
+        btn.disabled = true;
+        const orig = btn.innerHTML;
+        btn.innerHTML = `<i class='bx bx-loader-alt animate-spin'></i><span>Mengirim...</span>`;
+
+        try {
+          const res = await fetch("/api/notifications/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipient_phone: phone })
+          });
+          const json = await res.json();
+          if (res.ok && json.status === "success") {
+            showToast(json.message || "Pesan uji coba terkirim!");
+            loadNotificationLogs();
+          } else {
+            showToast(json.detail || "Gagal mengirim pesan uji coba", "error");
+          }
+        } catch (err) {
+          showToast("Koneksi gagal: " + err.message, "error");
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = orig;
+        }
+      }
+
+      async function triggerManualDigest() {
+        if (!confirm("Kirim laporan ringkasan energi harian AI ke WhatsApp sekarang?")) return;
+        try {
+          showToast("Memproses laporan harian via LLM & WAHA...");
+          const res = await fetch("/api/notifications/daily-digest", { method: "POST" });
+          const json = await res.json();
+          if (json.status === "success") {
+            showToast("Laporan harian berhasil dikirim ke WhatsApp!");
+            loadNotificationLogs();
+          } else {
+            showToast("Peringatan: " + (json.message || "Gagal"), "error");
+          }
+        } catch (e) {
+          showToast("Gagal memproses laporan: " + e.message, "error");
+        }
+      }
+
+      // ======================================================================
+      // 3. LOG RIWAYAT NOTIFIKASI (AUDIT TRAIL)
+      // ======================================================================
+      async function loadNotificationLogs() {
+        const tbody = document.getElementById("logsTableBody");
+        const category = document.getElementById("filterCategory").value;
+        try {
+          let url = "/api/notifications/logs?limit=50";
+          if (category) url += "&category=" + encodeURIComponent(category);
+
+          const res = await fetch(url);
+          const json = await res.json();
+          cachedLogs = json.items || [];
+
+          if (cachedLogs.length === 0) {
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="6" class="py-8 text-center text-[#9E9E9E]">
+                  <i class='bx bx-inbox text-3xl mb-1'></i>
+                  <p>Belum ada riwayat notifikasi yang tercatat.</p>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          tbody.innerHTML = cachedLogs.map((log, idx) => {
+            const badgeClass = getCategoryBadge(log.category);
+            const statusClass = log.status === "DELIVERED"
+              ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
+              : (log.status === "FAILED" ? "text-rose-400 bg-rose-500/10 border-rose-500/30" : "text-amber-400 bg-amber-500/10 border-amber-500/30");
+
+            const preview = (log.message_content || "").replace(/[*_~`]/g, "").slice(0, 55) + "...";
+
+            return `
+              <tr class="hover:bg-[#262626]/50 transition">
+                <td class="py-3 px-4 font-mono text-[11px] whitespace-nowrap text-[#9E9E9E]">
+                  ${log.timestamp || "—"}
+                </td>
+                <td class="py-3 px-4 whitespace-nowrap">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${badgeClass}">
+                    ${log.category}
+                  </span>
+                </td>
+                <td class="py-3 px-4 font-mono text-xs whitespace-nowrap text-[#E0E0E0]">
+                  +${log.recipient ? log.recipient.replace("+", "") : "—"}
+                </td>
+                <td class="py-3 px-4 whitespace-nowrap">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${statusClass}">
+                    ${log.status}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-xs text-[#9E9E9E] max-w-xs truncate">
+                  ${preview}
+                </td>
+                <td class="py-3 px-4 text-center whitespace-nowrap">
+                  <button
+                    type="button"
+                    onclick="openMessageModal(${idx})"
+                    class="px-2 py-1 rounded bg-[#262626] hover:bg-[#333333] border border-[#2E2E2E] text-[11px] text-emerald-400 transition"
+                  >
+                    <i class='bx bx-show'></i> Detail
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join("");
+        } catch (e) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="py-6 text-center text-rose-400">
+                Gagal memuat log riwayat: ${e.message}
+              </td>
+            </tr>
+          `;
+        }
+      }
+
+      function getCategoryBadge(cat) {
+        switch (cat) {
+          case "OVERLOAD": return "text-rose-400 bg-rose-500/10 border-rose-500/30";
+          case "RUNWAY_12H": return "text-amber-400 bg-amber-500/10 border-amber-500/30";
+          case "RUNWAY_6H": return "text-rose-500 bg-rose-500/15 border-rose-500/40";
+          case "DAWN_RISK": return "text-indigo-400 bg-indigo-500/10 border-indigo-500/30";
+          case "CUTOFF": return "text-red-400 bg-red-500/10 border-red-500/30";
+          case "TOPUP": return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
+          case "DAILY_DIGEST": return "text-purple-400 bg-purple-500/10 border-purple-500/30";
+          default: return "text-sky-400 bg-sky-500/10 border-sky-500/30";
+        }
+      }
+
+      function openMessageModal(idx) {
+        const item = cachedLogs[idx];
+        if (!item) return;
+
+        document.getElementById("modalTimestamp").textContent = item.timestamp || "—";
+        document.getElementById("modalRecipient").textContent = "+" + (item.recipient || "").replace("+", "");
+        document.getElementById("modalCategory").textContent = item.category || "—";
+
+        const st = document.getElementById("modalStatus");
+        st.textContent = item.status;
+        st.className = item.status === "DELIVERED" ? "text-emerald-400 font-bold" : "text-rose-400 font-bold";
+
+        document.getElementById("modalContent").textContent = item.message_content || "";
+
+        const errBox = document.getElementById("modalErrorContainer");
+        const errMsg = document.getElementById("modalErrorMessage");
+        if (item.error_message) {
+          errBox.classList.remove("hidden");
+          errMsg.textContent = item.error_message;
+        } else {
+          errBox.classList.add("hidden");
+        }
+
+        document.getElementById("messageModal").classList.remove("hidden");
+      }
+
+      function closeMessageModal() {
+        document.getElementById("messageModal").classList.add("hidden");
+      }
+
+      // Inisialisasi saat halaman dimuat
+      window.addEventListener("DOMContentLoaded", () => {
+        refreshWahaSession();
+        loadAlertConfig();
+        loadNotificationLogs();
+
+        // Polling status berkala tiap 15 detik
+        setInterval(refreshWahaSession, 15000);
+      });
+    </script>
+  </body>
+</html>
